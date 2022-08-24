@@ -13,8 +13,7 @@ from . import stats
 from . import utils
 from . import utils_graph
 
-
-def _is_endpoint(G, node, strict=True):
+def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
     """
     Is node a true endpoint of an edge.
 
@@ -24,7 +23,8 @@ def _is_endpoint(G, node, strict=True):
     1) is its own neighbor, ie, it self-loops.
     2) or, has no incoming edges or no outgoing edges, ie, all its incident
     edges point inward or all its incident edges point outward.
-    3) or, it does not have exactly two neighbors and degree of 2 or 4.
+    3) or, it does not have exactly two neighbors and degree of 2 or 4 and 
+    if allow_lanes_diff mode is false the incident edges must have the same number of lanes
     4) or, if strict mode is false, if its edges have different OSM IDs.
 
     Parameters
@@ -36,6 +36,9 @@ def _is_endpoint(G, node, strict=True):
     strict : bool
         if False, allow nodes to be end points even if they fail all other rules
         but have edges with different OSM IDs
+    allow_lanes_diff : bool
+        if False, do not consider nodes to be end points if incident edges have 
+        varying number of lanes.
 
     Returns
     -------
@@ -57,13 +60,15 @@ def _is_endpoint(G, node, strict=True):
         return True
 
     # rule 3
-    elif not (n == 2 and (d == 2 or d == 4)):
+    elif not (n == 2 and (d == 2 or d == 4) and (allow_lanes_diff or not _different_lanes(G, node))):
         # else, if it does NOT have 2 neighbors AND either 2 or 4 directed
-        # edges, it is an endpoint. either it has 1 or 3+ neighbors, in which
+        # edges AND no difference in the number of lanes exist between incident edges 
+        # if allow_lanes_diff mode is false, it is an endpoint. either it has 1 or 3+ neighbors, in which
         # case it is a dead-end or an intersection of multiple streets or it has
         # 2 neighbors but 3 degree (indicating a change from oneway to twoway)
         # or more than 4 degree (indicating a parallel edge) and thus is an
-        # endpoint
+        # endpoint if allow_lanes_diff mode is true. else, it is an endpoint if 
+        # no difference in the number of lanes exist between incident edges
         return True
 
     # rule 4
@@ -89,6 +94,37 @@ def _is_endpoint(G, node, strict=True):
     else:
         return False
 
+def _different_lanes(G, node):
+    """
+    Do the edges incident to the node have a difference in the number of lanes.
+
+    Parameters
+    ----------
+    G : networkx.MultiDiGraph
+        input graph
+    node : int
+        the node to examine
+    
+    Returns
+    -------
+    bool
+    """
+    neighbors = list(G.predecessors(node)) + list(G.successors(node))
+
+    # if the count of the tag "lanes" in neighbors does not match the number of incident edges, 
+    # then there is a difference in the number of lanes
+    if len(neighbors["lanes"]) != len(neighbors):
+        return True
+    
+    # if the set of number of lanes contains more than one value, 
+    # then there is a difference in the number of lanes
+    elif len(set(neighbors["lanes"])) > 1:
+        return True
+    
+    # if the tag "lanes" does not exist in either edge, 
+    # then no difference in the number of lanes exist
+    else:
+        return False
 
 def _build_path(G, endpoint, endpoint_successor, endpoints):
     """
@@ -159,7 +195,7 @@ def _build_path(G, endpoint, endpoint_successor, endpoints):
     return path
 
 
-def _get_paths_to_simplify(G, strict=True):
+def _get_paths_to_simplify(G, strict=True, allow_lanes_diff=True):
     """
     Generate all the paths to be simplified between endpoint nodes.
 
@@ -173,13 +209,16 @@ def _get_paths_to_simplify(G, strict=True):
     strict : bool
         if False, allow nodes to be end points even if they fail all other rules
         but have edges with different OSM IDs
+    allow_lanes_diff : bool
+        if False, do not consider nodes to be end points if incident edges have 
+        varying number of lanes.
 
     Yields
     ------
     path_to_simplify : list
     """
     # first identify all the nodes that are endpoints
-    endpoints = set([n for n in G.nodes if _is_endpoint(G, n, strict=strict)])
+    endpoints = set([n for n in G.nodes if _is_endpoint(G, n, strict=strict, allow_lanes_diff=allow_lanes_diff)])
     utils.log(f"Identified {len(endpoints)} edge endpoints")
 
     # for each endpoint node, look at each of its successor nodes
@@ -191,8 +230,7 @@ def _get_paths_to_simplify(G, strict=True):
                 # next endpoint node
                 yield _build_path(G, endpoint, successor, endpoints)
 
-
-def simplify_graph(G, strict=True, remove_rings=True):
+def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
     """
     Simplify a graph's topology by removing interstitial nodes.
 
@@ -215,6 +253,9 @@ def simplify_graph(G, strict=True, remove_rings=True):
         have multiple OSM IDs within them too.
     remove_rings : bool
         if True, remove isolated self-contained rings that have no endpoints
+    endpoint_different_lanes : bool
+        if False, do not consider nodes to be end points if incident edges have 
+        varying number of lanes.
 
     Returns
     -------
@@ -238,7 +279,7 @@ def simplify_graph(G, strict=True, remove_rings=True):
     all_edges_to_add = []
 
     # generate each path that needs to be simplified
-    for path in _get_paths_to_simplify(G, strict=strict):
+    for path in _get_paths_to_simplify(G, strict=strict, allow_lanes_diff=allow_lanes_diff):
 
         # add the interstitial edges we're removing to a list so we can retain
         # their spatial geometry
