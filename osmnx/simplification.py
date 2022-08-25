@@ -13,6 +13,7 @@ from . import stats
 from . import utils
 from . import utils_graph
 
+
 def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
     """
     Is node a true endpoint of an edge.
@@ -60,14 +61,16 @@ def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
         return True
 
     # rule 3
-    elif not (n == 2 and (d == 2 or d == 4) and (allow_lanes_diff or not _different_lanes(G, node))):
+    elif not (
+        n == 2 and (d == 2 or d == 4) and (allow_lanes_diff or not _different_lanes(G, node))
+    ):
         # else, if it does NOT have 2 neighbors AND either 2 or 4 directed
-        # edges AND no difference in the number of lanes exist between incident edges 
+        # edges AND no difference in the number of lanes exist between incident edges
         # if allow_lanes_diff mode is false, it is an endpoint. either it has 1 or 3+ neighbors, in which
         # case it is a dead-end or an intersection of multiple streets or it has
         # 2 neighbors but 3 degree (indicating a change from oneway to twoway)
         # or more than 4 degree (indicating a parallel edge) and thus is an
-        # endpoint if allow_lanes_diff mode is true. else, it is an endpoint if 
+        # endpoint if allow_lanes_diff mode is true. else, it is an endpoint if
         # no difference in the number of lanes exist between incident edges
         return True
 
@@ -94,6 +97,7 @@ def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
     else:
         return False
 
+
 def _different_lanes(G, node):
     """
     Do the edges incident to the node have a difference in the number of lanes.
@@ -111,20 +115,20 @@ def _different_lanes(G, node):
     """
     neighbors = list(G.predecessors(node)) + list(G.successors(node))
 
-    # if the count of the tag "lanes" in neighbors does not match the number of incident edges, 
-    # then there is a difference in the number of lanes
+    # if the count of the tag "lanes" in neighbors does not match the number of neighbors,
+    # then there exists a difference in the number of lanes between the neighbors
     if len(neighbors["lanes"]) != len(neighbors):
         return True
-    
-    # if the set of number of lanes contains more than one value, 
+
+    # if more than one lane count exist in the set of all lane counts of the neighbors,
     # then there is a difference in the number of lanes
     elif len(set(neighbors["lanes"])) > 1:
         return True
-    
-    # if the tag "lanes" does not exist in either edge, 
-    # then no difference in the number of lanes exist
+
+    # else there is no difference in the number of lanes
     else:
         return False
+
 
 def _build_path(G, endpoint, endpoint_successor, endpoints):
     """
@@ -218,7 +222,9 @@ def _get_paths_to_simplify(G, strict=True, allow_lanes_diff=True):
     path_to_simplify : list
     """
     # first identify all the nodes that are endpoints
-    endpoints = set([n for n in G.nodes if _is_endpoint(G, n, strict=strict, allow_lanes_diff=allow_lanes_diff)])
+    endpoints = set(
+        [n for n in G.nodes if _is_endpoint(G, n, strict=strict, allow_lanes_diff=allow_lanes_diff)]
+    )
     utils.log(f"Identified {len(endpoints)} edge endpoints")
 
     # for each endpoint node, look at each of its successor nodes
@@ -229,6 +235,7 @@ def _get_paths_to_simplify(G, strict=True, allow_lanes_diff=True):
                 # from the endpoint node, through the successor, and on to the
                 # next endpoint node
                 yield _build_path(G, endpoint, successor, endpoints)
+
 
 def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
     """

@@ -464,10 +464,7 @@ def test_graph_from_functions():
 
     ox.settings.memory = "1073741824"
     G = ox.graph_from_point(
-        location_point,
-        dist=500,
-        dist_type="network",
-        network_type="all_private",
+        location_point, dist=500, dist_type="network", network_type="all_private",
     )
 
 
