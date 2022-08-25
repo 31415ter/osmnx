@@ -113,16 +113,20 @@ def _different_lanes(G, node):
     -------
     bool
     """
-    neighbors = list(G.predecessors(node)) + list(G.successors(node))
+    predecessors = list(G.predecessors(node))
+    successors = list(G.successors(node))
+
+    incident_edges = [G.edges[n, node, 0] for n in predecessors] + [G.edges[node, n, 0] for n in successors]
+    lanes = [x["lanes"] for x in incident_edges if "lanes" in x]
 
     # if the count of the tag "lanes" in neighbors does not match the number of neighbors,
     # then there exists a difference in the number of lanes between the neighbors
-    if len(neighbors["lanes"]) != len(neighbors):
+    if len(lanes) != 0 and (len(lanes) != len(incident_edges)):
         return True
 
     # if more than one lane count exist in the set of all lane counts of the neighbors,
     # then there is a difference in the number of lanes
-    elif len(set(neighbors["lanes"])) > 1:
+    elif len(set(lanes)) > 1:
         return True
 
     # else there is no difference in the number of lanes
