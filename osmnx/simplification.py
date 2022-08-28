@@ -100,7 +100,7 @@ def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
 
 def _different_lanes(G, node):
     """
-    Do the edges incident to the node have a difference in the number of lanes.
+    Do the edges incident to the node have a different number of lanes.
 
     Parameters
     ----------
@@ -113,23 +113,44 @@ def _different_lanes(G, node):
     -------
     bool
     """
-    predecessors = list(G.predecessors(node))
-    successors = list(G.successors(node))
+    # get the in and out edge of the examined node, but only consider the edges where "reverse" is false
+    # as potentially two edges are created for each two-way street in a bi-directinal graph
+    in_edge = [d for u,v,d in G.in_edges(node, data=True) if d["reversed"] == False]
+    out_edge = [d for u,v,d in G.out_edges(node, data=True) if d["reversed"] == False]
 
-    incident_edges = [G.edges[n, node, 0] for n in predecessors] + [G.edges[node, n, 0] for n in successors]
-    lanes = [x["lanes"] for x in incident_edges if "lanes" in x]
+    # retrieve all lane counts of the in and out edges using the assumptions when lanes are not specified,
+    # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
+    lanes = set()
+    lanes_forward = set()
+    lanes_backward = set()
+    for edge in in_edge + out_edge:
+        if "lanes" in edge: 
+            lanes.add(edge["lanes"])
+        elif edge["oneway"] == "yes":
+            lanes.add(1)
+        elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
+            lanes.add(2)
+        else:
+            lanes.add(1)
 
-    # if the count of the tag "lanes" in neighbors does not match the number of neighbors,
-    # then there exists a difference in the number of lanes between the neighbors
-    if len(lanes) != 0 and (len(lanes) != len(incident_edges)):
+        if "lanes:forward" in edge:
+            lanes_forward.add(edge["lanes:forward"])
+        if "lanes:backward" in edge:
+            lanes_backward.add(edge["lanes:backward"])
+        # TODO ? fill remaining forward/backward lanes with the same value as the forward/backward lanes, or is this not alway allowed? CHECK THIS
+
+
+    # if the number of lanes of the in and out edges are different, 
+    # the edges connected to the considered node differ in the number of lanes
+    if len(lanes) > 1:
+        return True
+    
+    # if the node has only incoming or outgoing edges 
+    # AND the number of forward lanes and backward lanes are different between the edges,
+    # this implies that a change occured in the division of lanes for each direction at the node.
+    elif (len(out_edge) == 2 or len(in_edge) == 2) and (lanes_forward != lanes_backward):
         return True
 
-    # if more than one lane count exist in the set of all lane counts of the neighbors,
-    # then there is a difference in the number of lanes
-    elif len(set(lanes)) > 1:
-        return True
-
-    # else there is no difference in the number of lanes
     else:
         return False
 
