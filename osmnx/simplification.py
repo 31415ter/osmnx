@@ -137,8 +137,6 @@ def _different_lanes(G, node):
             lanes_forward.add(edge["lanes:forward"])
         if "lanes:backward" in edge:
             lanes_backward.add(edge["lanes:backward"])
-        # TODO ? fill remaining forward/backward lanes with the same value as the forward/backward lanes, or is this not alway allowed? CHECK THIS
-
 
     # if the number of lanes of the in and out edges are different, 
     # the edges connected to the considered node differ in the number of lanes
