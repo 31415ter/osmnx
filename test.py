@@ -87,13 +87,43 @@ new_edges = new_edges[new_edges['highway'] != 'projected_footway']
 new_nodes.drop('osmid', axis = 1).to_file('data/sample/test_nodes.shp')
 new_edges.to_file('data/sample/new_edges.shp')
 
-# add reversed edges to the graph
 new_edges['key'] = new_edges['key'].astype(int)
+
+def _add_reversed_edges(G, bidirectional = False):
+    from shapely.geometry import LineString
+    oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
+
+    print(len(G.edges))
+    for u,v,data in list(G.edges(data=True)):
+        if "oneway" in data and data["oneway"] not in oneway_values:
+
+            if (u == 7450211298 and v == 44894214):
+                print(data)
+                print(data["oneway"] not in oneway_values)
+
+            new_data = data.copy()
+            new_data["reversed"] = True
+            # reverse geometry linestring coordinates
+            new_data["geometry"] = LineString(list(new_data["geometry"].coords)[::-1])
+            if "key" in new_data:
+                new_data.pop("key")
+
+            # check if edge v,u exists in G
+            key_list = list(G[u][v])
+            if G.has_edge(v, u):
+                key_list += list(G[v][u])
+            new_key = max(key_list) + 1
+
+            G.add_edge(v,u, key = new_key, **new_data)
+    print(len(G.edges))
 
 V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'key')
 nx.set_node_attributes(V, new_nodes.set_index('osmid').to_dict('index'))
 V.graph["crs"] = 'epsg:4326'
-ox.save_graph_geopackage(V, filepath="./data/TEST_simplified_network.gpkg")
+
+_add_reversed_edges(V)
+
+ox.save_graph_geopackage(V, filepath="./data/TEST_simplified_network.gpkg", directed = True)
 
 node = 44809902
 in_edge = [d for u,v,d in G.in_edges(node, data=True)]
