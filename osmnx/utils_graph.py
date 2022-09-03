@@ -503,7 +503,12 @@ def _update_edge_keys(G):
     # for each unique different street, increment its key to make it unique
     for u, v, k in set(different_streets):
         new_key = max(list(G[u][v]) + list(G[v][u])) + 1
-        G.add_edge(u, v, key=new_key, **G.get_edge_data(u, v, k))
+
+        edge_data = G.get_edge_data(u, v, k)
+        if "key" in edge_data:
+            edge_data.pop("key")
+        
+        G.add_edge(u, v, key=new_key, **edge_data)
         G.remove_edge(u, v, key=k)
 
     return G

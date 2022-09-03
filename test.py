@@ -57,30 +57,29 @@ G = nx.compose(G_3, G_4)
 G = get_largest_component(G) # do not consider disconnected components
 G = ox.simplify_graph(G)
 
-ox.save_graph_shapefile(G, filepath='data/delft/', encoding='utf-8')
+ox.save_graph_shapefile(G, filepath='data/delft/', encoding='utf-8', directed=True)
 
 # load as GeoDataFrame
 nodes = gpd.read_file('data/delft/nodes.shp')
 edges = gpd.read_file('data/delft/edges.shp')
 
+# ONLY SAVE EDGES THAT ARE NOT REVERSED!
+# LATER ADD REVERSE OF EDGES!
+
+edges = edges.loc[(edges["reversed"] == "False")]
+edges['from'] = edges['u']
+edges['to'] = edges['v']
+
 pois = ox.geometries.geometries_from_place("Delft", buffer_dist=500, tags=tags)
-pois = pois.to_crs(epsg = 4327)
+pois = pois.to_crs(epsg = 4326)
 pois = pois[pois['geometry'].geom_type == 'Point']
 pois['lon'] = pois['geometry'].apply(lambda p: p.x)
 pois['lat'] = pois['geometry'].apply(lambda p: p.y)
 pois['key'] = pois.index  # set a primary key column
 
+# pois = pois.loc[pois['name'] == "Hotel Eetcafé Het Konings Huys"]
+
 new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', path=None)
-
-# # output
-# poi_links = new_edges[new_edges['highway'] == 'projected_footway']
-# ax = edges.plot(linewidth=0.8, figsize=(18,10), label='Original Road Edges')
-# poi_links.plot(color='indianred', linewidth=2, ax=ax, label='New Connection Edges')
-# pois.plot(color='indianred', marker='.', markersize=200, ax=ax, label='POI')
-# ax.legend(loc=2, fontsize=18)
-# ax.set_title('The integrated network of supermarkets and road network at Toa Payoh', fontsize=22)
-
-# print('wat')
 
 new_nodes = new_nodes[new_nodes['highway'] != 'poi']
 new_edges = new_edges[new_edges['highway'] != 'projected_footway']
@@ -88,17 +87,15 @@ new_edges = new_edges[new_edges['highway'] != 'projected_footway']
 new_nodes.drop('osmid', axis = 1).to_file('data/sample/test_nodes.shp')
 new_edges.to_file('data/sample/new_edges.shp')
 
-# TODO: make sure the graph is directed
+# add reversed edges to the graph
+new_edges['key'] = new_edges['key'].astype(int)
 
-print("done")
-
-V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'osmid')
+V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'key')
 nx.set_node_attributes(V, new_nodes.set_index('osmid').to_dict('index'))
 V.graph["crs"] = 'epsg:4326'
 ox.save_graph_geopackage(V, filepath="./data/TEST_simplified_network.gpkg")
 
-
-node = 1391531695
+node = 44809902
 in_edge = [d for u,v,d in G.in_edges(node, data=True)]
 out_edge = [d for u,v,d in G.out_edges(node, data=True)]
 
