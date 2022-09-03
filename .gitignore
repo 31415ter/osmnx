@@ -139,3 +139,5 @@ ENV/
 
 # VSCode IDE idea files
 .vscode
+*.json
+data/

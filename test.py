@@ -91,3 +91,15 @@ new_edges.to_file('data/sample/new_edges.shp')
 # TODO: make sure the graph is directed
 
 print("done")
+
+V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'osmid')
+nx.set_node_attributes(V, new_nodes.set_index('osmid').to_dict('index'))
+V.graph["crs"] = 'epsg:4326'
+ox.save_graph_geopackage(V, filepath="./data/TEST_simplified_network.gpkg")
+
+
+node = 1391531695
+in_edge = [d for u,v,d in G.in_edges(node, data=True)]
+out_edge = [d for u,v,d in G.out_edges(node, data=True)]
+
+print((len(in_edge), len(out_edge)))
