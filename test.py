@@ -57,16 +57,12 @@ G = nx.compose(G_3, G_4)
 G = get_largest_component(G) # do not consider disconnected components
 G = ox.simplify_graph(G)
 
-ox.save_graph_shapefile(G, filepath='data/delft/', encoding='utf-8', directed=True)
+ox.save_graph_shapefile(G, filepath='data/delft/', encoding='utf-8', directed=False)
 
 # load as GeoDataFrame
 nodes = gpd.read_file('data/delft/nodes.shp')
 edges = gpd.read_file('data/delft/edges.shp')
 
-# ONLY SAVE EDGES THAT ARE NOT REVERSED!
-# LATER ADD REVERSE OF EDGES!
-
-edges = edges.loc[(edges["reversed"] == "False")]
 edges['from'] = edges['u']
 edges['to'] = edges['v']
 
@@ -77,9 +73,8 @@ pois['lon'] = pois['geometry'].apply(lambda p: p.x)
 pois['lat'] = pois['geometry'].apply(lambda p: p.y)
 pois['key'] = pois.index  # set a primary key column
 
-# pois = pois.loc[pois['name'] == "Hotel Eetcafé Het Konings Huys"]
-
 new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', path=None)
+# TODO WHY ARE KEYS NOT INTEGERS?
 
 new_nodes = new_nodes[new_nodes['highway'] != 'poi']
 new_edges = new_edges[new_edges['highway'] != 'projected_footway']
@@ -96,14 +91,8 @@ def _add_reversed_edges(G, bidirectional = False):
     print(len(G.edges))
     for u,v,data in list(G.edges(data=True)):
         if "oneway" in data and data["oneway"] not in oneway_values:
-
-            if (u == 7450211298 and v == 44894214):
-                print(data)
-                print(data["oneway"] not in oneway_values)
-
             new_data = data.copy()
             new_data["reversed"] = True
-            # reverse geometry linestring coordinates
             new_data["geometry"] = LineString(list(new_data["geometry"].coords)[::-1])
             if "key" in new_data:
                 new_data.pop("key")
