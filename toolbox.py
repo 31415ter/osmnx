@@ -13,7 +13,7 @@ from shapely.ops import snap, split
 
 pd.options.mode.chained_assignment = None
 
-def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=5, meter_epsg=3857):
+def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, threshold=200, knn=5, meter_epsg=3857):
     """Connect and integrate a set of POIs into an existing road network.
 
     Given a road network in the form of two GeoDataFrames: nodes and edges,
@@ -33,8 +33,7 @@ def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=
                               Preferably use unique integers (int or str) only,
                               and be aware not to intersect with the node key,
                               'osmid' if you use OSM data, in the nodes gdf.
-        path (str): directory path to use for saving files (nodes and edges).
-                      Outputs will NOT be saved if this arg is not specified.
+        projected_footways (bool): whether to generate projected footways.
         threshold (int): the max length of a POI connection edge, POIs with
                          connection edge beyond this length will be removed.
                          The unit is in meters as crs epsg is set to 3857 by
@@ -108,7 +107,7 @@ def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=
             new_nodes.columns = ['geometry', 'osmid']
             new_nodes['highway'] = node_highway_poi
             # new_nodes['osmid'] = new_nodes['osmid'].astype(int)
-            new_nodes['osmid'] = new_nodes.droplevel(level = 0).index
+            # new_nodes['osmid'] = new_nodes.droplevel(level = 0).index
 
         else:
             print("Unknown ptype when updating nodes.")
@@ -153,7 +152,7 @@ def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=
             new_edges['highway'] = edge_highway
 
         # update features (a bit slow)
-        new_edges['length'] = [l.length for l in new_lines]
+        # new_edges['length'] = [l.length for l in new_lines]
         new_edges['from'] = new_edges['geometry'].map(
             lambda x: nodes_id_dict.get(list(x.coords)[0], None))
         new_edges['to'] = new_edges['geometry'].map(
@@ -234,10 +233,11 @@ def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=
     ## STAGE 2: connection
     # 2-1: update external edges (projected footways connected to pois)
     # establish new_edges
-    print("Updating external links...")
-    pps_gdf = nodes_meter[nodes_meter['highway'] == node_highway_pp]
-    new_lines = [LineString([p1, p2]) for p1, p2 in zip(pois_meter['geometry'], pps_gdf['geometry'])]
-    edges_meter, _ = update_edges(edges_meter, new_lines, replace=False)
+    if (projected_footways):
+        print("Updating external links...")
+        pps_gdf = nodes_meter[nodes_meter['highway'] == node_highway_pp]
+        new_lines = [LineString([p1, p2]) for p1, p2 in zip(pois_meter['geometry'], pps_gdf['geometry'])]
+        edges_meter, _ = update_edges(edges_meter, new_lines, replace=False)
 
     ## STAGE 3: output
     # convert CRS
@@ -250,7 +250,11 @@ def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=
     nodes['y'] = [p.y for p in nodes['geometry']]
 
     # edges.reset_index(drop=True, inplace=True)
-    edges['length'] = edges['length'].astype(float)
+    # edges['length'] = edges['length'].astype(float)
+
+
+    # TODO: UPDATE LENGTH OF EDGES USING GREATER POLAR DISTANCE
+    
 
     # report issues
     # - examine key duplication
@@ -261,10 +265,5 @@ def connect_poi(pois, nodes, edges, key_col=None, path=None, threshold=200, knn=
     # - examine missing nodes
     print("Missing 'from' nodes:", len(edges[edges['from'] == None]))
     print("Missing 'to' nodes:", len(edges[edges['to'] == None]))
-
-    # save and return
-    if path:
-        nodes.to_file(path+'/nodes.shp')
-        edges.to_file(path+'/edges.shp')
 
     return nodes, edges

@@ -71,9 +71,11 @@ pois = pois.to_crs(epsg = 4326)
 pois = pois[pois['geometry'].geom_type == 'Point']
 pois['lon'] = pois['geometry'].apply(lambda p: p.x)
 pois['lat'] = pois['geometry'].apply(lambda p: p.y)
+pois = pois.droplevel('element_type')
 pois['key'] = pois.index  # set a primary key column
 
-new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', path=None)
+
+new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', projected_footways=True)
 # TODO WHY ARE KEYS NOT INTEGERS?
 
 new_nodes = new_nodes[new_nodes['highway'] != 'poi']
@@ -87,8 +89,6 @@ new_edges['key'] = new_edges['key'].astype(int)
 def _add_reversed_edges(G, bidirectional = False):
     from shapely.geometry import LineString
     oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
-
-    print(len(G.edges))
     for u,v,data in list(G.edges(data=True)):
         if "oneway" in data and data["oneway"] not in oneway_values:
             new_data = data.copy()
@@ -104,7 +104,6 @@ def _add_reversed_edges(G, bidirectional = False):
             new_key = max(key_list) + 1
 
             G.add_edge(v,u, key = new_key, **new_data)
-    print(len(G.edges))
 
 V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'key')
 nx.set_node_attributes(V, new_nodes.set_index('osmid').to_dict('index'))
