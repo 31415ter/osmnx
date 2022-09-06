@@ -13,7 +13,7 @@ from shapely.ops import snap, split
 
 pd.options.mode.chained_assignment = None
 
-def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, node_pois = False, threshold=200, knn=5, meter_epsg=4326):
+def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, node_pois = False, dict_tags = None, threshold=200, knn=5, meter_epsg=4326):
     """Connect and integrate a set of POIs into an existing road network.
 
     Given a road network in the form of two GeoDataFrames: nodes and edges,
@@ -35,6 +35,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
                               'osmid' if you use OSM data, in the nodes gdf.
         projected_footways (bool): whether to generate projected footways.
         node_pois (bool): whether to generate nodes for POIs.
+        dict_tags (dict): a dictionary of tags to be added to the new nodes.
         threshold (int): the max length of a POI connection edge, POIs with
                          connection edge beyond this length will be removed.
                          The unit is in meters as crs epsg is set to 3857 by
@@ -101,14 +102,16 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
             n = len(new_nodes)
             new_nodes['highway'] = node_highway_pp
             new_nodes['osmid'] = [int(osmid_prefix + i) for i in range(n)]
-
+            for tag in dict_tags:
+                if tag not in pois_meter.columns:
+                    continue 
+                new_nodes[tag] = list(pois_meter[tag])
+ 
         # create gdf of new nodes (original POIs)
         elif ptype == 'poi':
             new_nodes = new_points[['geometry', key_col]]
             new_nodes.columns = ['geometry', 'osmid']
             new_nodes['highway'] = node_highway_poi
-            # new_nodes['osmid'] = new_nodes['osmid'].astype(int)
-            # new_nodes['osmid'] = new_nodes.droplevel(level = 0).index
 
         else:
             print("Unknown ptype when updating nodes.")

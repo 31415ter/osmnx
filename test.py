@@ -1,8 +1,6 @@
 import networkx as nx
 import osmnx as ox
-import geopandas as gpd
 from toolbox import connect_poi
-from osmnx.utils_graph import get_largest_component
 
 tags = {'amenity': ['restaurant', 'pub', 'cafe', 'fast_food', 'bar']}
 
@@ -46,25 +44,31 @@ cf_3 = (
 ox.config(log_file=True, log_console=True, use_cache=True, useful_tags_way=useful_tags_way)
 
 # get road network and save as .shp
-G_1 = ox.graph_from_place("Rotterdam", custom_filter=cf_1, retain_all=True, simplify=False)
-G_2 = ox.graph_from_place("Rotterdam", custom_filter=cf_2, retain_all=True, simplify=False)
-G_3 = ox.graph_from_place("Rotterdam", custom_filter=cf_3, retain_all=True, simplify=False)
+# Rotterdam = ox.graph_from_place("Rotterdam", custom_filter=cf_1, retain_all=True, simplify=False)
+# Schiedam = ox.graph_from_place("Schiedam", custom_filter=cf_2, retain_all=True, simplify=False)
+G1 = ox.graph_from_place("Hoogvliet", custom_filter=cf_1, retain_all=True, simplify=False)
+G2 = ox.graph_from_place("Hoogvliet", custom_filter=cf_2, retain_all=True, simplify=False)
+G3 = ox.graph_from_place("Hoogvliet", custom_filter=cf_3, retain_all=True, simplify=False)
 
-G_4 = nx.compose(G_1, G_2)
-G = nx.compose(G_3, G_4)
-G = get_largest_component(G) # do not consider disconnected components
+G = nx.compose(G1, G2)
+G = nx.compose(G3, G)
+G = ox.get_largest_component(G) # do not consider disconnected components
 G = ox.simplify_graph(G)
 
-ox.save_graph_shapefile(G, filepath='data/delft/', encoding='utf-8', directed=False)
+nodes, edges = ox.utils_graph.graph_to_gdfs(ox.utils_graph.get_undirected(G))
 
-# load as GeoDataFrame
-nodes = gpd.read_file('data/delft/nodes.shp')
-edges = gpd.read_file('data/delft/edges.shp')
+u = [u for u,v,k in list(edges.index)]
+v = [v for u,v,k in list(edges.index)]
+k = [k for u,v,k in list(edges.index)]
+edges.index = range(0, len(edges))
+edges['u'] = u
+edges['v'] = v
+edges['k'] = k
 
-edges['from'] = edges['u']
-edges['to'] = edges['v']
+nodes['osmid'] = nodes.index
+nodes.index = range(0, len(nodes))
 
-pois = ox.geometries.geometries_from_place("Rotterdam", buffer_dist=500, tags=tags)
+pois = ox.geometries.geometries_from_place("Hoogvliet", buffer_dist=100, tags=tags)
 pois = pois.to_crs(epsg = 4326)
 pois = pois[pois['geometry'].geom_type == 'Point']
 pois['lon'] = pois['geometry'].apply(lambda p: p.x)
@@ -72,13 +76,9 @@ pois['lat'] = pois['geometry'].apply(lambda p: p.y)
 pois = pois.droplevel('element_type')
 pois['key'] = pois.index  # set a primary key column
 
+new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='osmid', projected_footways=False, node_pois = False, dict_tags = {'amenity', 'name'})
 
-new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', projected_footways=False, node_pois = False)
-
-new_nodes.drop('osmid', axis = 1).to_file('data/sample/test_nodes.shp')
-new_edges.to_file('data/sample/new_edges.shp')
-
-def _add_reversed_edges(G, bidirectional = False):
+def _add_reversed_edges(G):
     from shapely.geometry import LineString
     oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
     for u,v,data in list(G.edges(data=True)):
@@ -97,7 +97,7 @@ def _add_reversed_edges(G, bidirectional = False):
 
             G.add_edge(v,u, key = new_key, **new_data)
 
-V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'key')
+V = nx.from_pandas_edgelist(df = new_edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'k')
 nx.set_node_attributes(V, new_nodes.set_index('osmid').to_dict('index'))
 V.graph["crs"] = 'epsg:4326'
 
