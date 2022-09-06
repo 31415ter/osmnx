@@ -27,12 +27,12 @@ useful_tags_way = [
 ]
 
 cf_1 = (
-        f'["highway"]["highway"!~"footway|service|busway|motor|steps|platform|path|track|bridleway|construction"]'
+        f'["highway"]["highway"!~"pedestrian|footway|service|busway|motor|steps|platform|path|track|bridleway|construction"]'
         f'["bicycle"!~"^no|private|use_sidepath$"]["access"!~"no|private"]["area"!~"yes"]'
     )
 
 cf_2 = (
-        f'["highway"]["highway"~"footway|service|busway|motor|steps|platform|path|track|bridleway|construction"]'
+        f'["highway"]["highway"~"pedestrian|footway|service|busway|motor|steps|platform|path|track|bridleway|construction"]'
         f'["bicycle"~"yes|designated|permissive|dismount"]["access"!~"no|private"]["area"!~"yes"]'
     )
 
@@ -43,16 +43,18 @@ cf_3 = (
 
 ox.config(log_file=True, log_console=True, use_cache=True, useful_tags_way=useful_tags_way)
 
-# get road network and save as .shp
-# Rotterdam = ox.graph_from_place("Rotterdam", custom_filter=cf_1, retain_all=True, simplify=False)
-# Schiedam = ox.graph_from_place("Schiedam", custom_filter=cf_2, retain_all=True, simplify=False)
-G1 = ox.graph_from_place("Hoogvliet", custom_filter=cf_1, retain_all=True, simplify=False)
-G2 = ox.graph_from_place("Hoogvliet", custom_filter=cf_2, retain_all=True, simplify=False)
-G3 = ox.graph_from_place("Hoogvliet", custom_filter=cf_3, retain_all=True, simplify=False)
+city = "Delft"
+
+print("G1")
+G1 = ox.graph_from_place(city, custom_filter=cf_1, retain_all=True, simplify=False)
+print("G2")
+G2 = ox.graph_from_place(city, custom_filter=cf_2, retain_all=True, simplify=False)
+print("G3")
+G3 = ox.graph_from_place(city, custom_filter=cf_3, retain_all=True, simplify=False)
 
 G = nx.compose(G1, G2)
 G = nx.compose(G3, G)
-G = ox.get_largest_component(G) # do not consider disconnected components
+G = ox.utils_graph.get_largest_component(G) # do not consider disconnected components
 G = ox.simplify_graph(G)
 
 nodes, edges = ox.utils_graph.graph_to_gdfs(ox.utils_graph.get_undirected(G))
@@ -68,7 +70,7 @@ edges['k'] = k
 nodes['osmid'] = nodes.index
 nodes.index = range(0, len(nodes))
 
-pois = ox.geometries.geometries_from_place("Hoogvliet", buffer_dist=100, tags=tags)
+pois = ox.geometries.geometries_from_place(city, buffer_dist=100, tags=tags)
 pois = pois.to_crs(epsg = 4326)
 pois = pois[pois['geometry'].geom_type == 'Point']
 pois['lon'] = pois['geometry'].apply(lambda p: p.x)
@@ -103,4 +105,4 @@ V.graph["crs"] = 'epsg:4326'
 
 _add_reversed_edges(V)
 
-ox.save_graph_geopackage(V, filepath="./data/TEST_simplified_network.gpkg", directed = True)
+ox.save_graph_geopackage(V, filepath="./data/" + city + "_pois_network.gpkg", directed = True)
