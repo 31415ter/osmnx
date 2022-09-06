@@ -4,9 +4,7 @@ import geopandas as gpd
 from toolbox import connect_poi
 from osmnx.utils_graph import get_largest_component
 
-tags = {'amenity': ['restaurant', 'pub', 'hotel'],
-        'building': 'hotel',
-        'tourism': 'hotel'}
+tags = {'amenity': ['restaurant', 'pub', 'cafe', 'fast_food', 'bar']}
 
 useful_tags_way = [
     "bridge",
@@ -41,16 +39,16 @@ cf_2 = (
     )
 
 cf_3 = (
-        f'["highway"]["highway"="service"]["service"!="parking_aisle"]'
+        f'["highway"]["highway"="service"]'
         f'["bicycle"!~"^no|private|use_sidepath$"]["access"!~"no|private"]["area"!~"yes"]'
     )
 
 ox.config(log_file=True, log_console=True, use_cache=True, useful_tags_way=useful_tags_way)
 
 # get road network and save as .shp
-G_1 = ox.graph_from_place("Delft", custom_filter=cf_1, retain_all=True, simplify=False)
-G_2 = ox.graph_from_place("Delft", custom_filter=cf_2, retain_all=True, simplify=False)
-G_3 = ox.graph_from_place("Delft", custom_filter=cf_3, retain_all=True, simplify=False)
+G_1 = ox.graph_from_place("Rotterdam", custom_filter=cf_1, retain_all=True, simplify=False)
+G_2 = ox.graph_from_place("Rotterdam", custom_filter=cf_2, retain_all=True, simplify=False)
+G_3 = ox.graph_from_place("Rotterdam", custom_filter=cf_3, retain_all=True, simplify=False)
 
 G_4 = nx.compose(G_1, G_2)
 G = nx.compose(G_3, G_4)
@@ -66,7 +64,7 @@ edges = gpd.read_file('data/delft/edges.shp')
 edges['from'] = edges['u']
 edges['to'] = edges['v']
 
-pois = ox.geometries.geometries_from_place("Delft", buffer_dist=500, tags=tags)
+pois = ox.geometries.geometries_from_place("Rotterdam", buffer_dist=500, tags=tags)
 pois = pois.to_crs(epsg = 4326)
 pois = pois[pois['geometry'].geom_type == 'Point']
 pois['lon'] = pois['geometry'].apply(lambda p: p.x)
@@ -75,16 +73,10 @@ pois = pois.droplevel('element_type')
 pois['key'] = pois.index  # set a primary key column
 
 
-new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', projected_footways=True)
-# TODO WHY ARE KEYS NOT INTEGERS?
-
-new_nodes = new_nodes[new_nodes['highway'] != 'poi']
-new_edges = new_edges[new_edges['highway'] != 'projected_footway']
+new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col='key', projected_footways=False, node_pois = False)
 
 new_nodes.drop('osmid', axis = 1).to_file('data/sample/test_nodes.shp')
 new_edges.to_file('data/sample/new_edges.shp')
-
-new_edges['key'] = new_edges['key'].astype(int)
 
 def _add_reversed_edges(G, bidirectional = False):
     from shapely.geometry import LineString
@@ -112,9 +104,3 @@ V.graph["crs"] = 'epsg:4326'
 _add_reversed_edges(V)
 
 ox.save_graph_geopackage(V, filepath="./data/TEST_simplified_network.gpkg", directed = True)
-
-node = 44809902
-in_edge = [d for u,v,d in G.in_edges(node, data=True)]
-out_edge = [d for u,v,d in G.out_edges(node, data=True)]
-
-print((len(in_edge), len(out_edge)))

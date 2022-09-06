@@ -13,7 +13,7 @@ from shapely.ops import snap, split
 
 pd.options.mode.chained_assignment = None
 
-def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, threshold=200, knn=5, meter_epsg=3857):
+def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, node_pois = False, threshold=200, knn=5, meter_epsg=4326):
     """Connect and integrate a set of POIs into an existing road network.
 
     Given a road network in the form of two GeoDataFrames: nodes and edges,
@@ -34,6 +34,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, th
                               and be aware not to intersect with the node key,
                               'osmid' if you use OSM data, in the nodes gdf.
         projected_footways (bool): whether to generate projected footways.
+        node_pois (bool): whether to generate nodes for POIs.
         threshold (int): the max length of a POI connection edge, POIs with
                          connection edge beyond this length will be removed.
                          The unit is in meters as crs epsg is set to 3857 by
@@ -88,7 +89,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, th
             print('Error when splitting line: {}\n{}\n{}\n'.format(e, line, pps))
             return []
 
-    def update_nodes(nodes, new_points, ptype, meter_epsg=3857):
+    def update_nodes(nodes, new_points, ptype, meter_epsg=meter_epsg):
         """Update nodes with a list (pp) or a GeoDataFrame (poi) of new_points.
         
         Args:
@@ -159,6 +160,12 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, th
             lambda x: nodes_id_dict.get(list(x.coords)[-1], None))
         new_edges['osmid'] = ['_'.join(list(map(str, s))) for s in zip(new_edges['from'], new_edges['to'])]
 
+        x = [coord.xy[0] for coord in new_edges['geometry']]
+        y = [coord.xy[1] for coord in new_edges['geometry']]
+
+        new_edges['length'] = list(distance(x, y))
+        new_edges['length'][np.isnan(new_edges['length'])] = 0
+
         # remember to reindex to prevent duplication when concat
         start = edges.index[-1] + 1
         stop = start + len(new_edges)
@@ -183,6 +190,60 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, th
         # all edges, newly added edges only
         return edges, new_edges
 
+    def great_circle_vec(lat1, lng1, lat2, lng2, earth_radius = 6_371_009):
+        """
+        Calculate great-circle distances between pairs of points.
+
+        Vectorized function to calculate the great-circle distance between two
+        points' coordinates or between arrays of points' coordinates using the
+        haversine formula. Expects coordinates in decimal degrees.
+
+        Parameters
+        ----------
+        lat1 : float or numpy.array of float
+            first point's latitude coordinate
+        lng1 : float or numpy.array of float
+            first point's longitude coordinate
+        lat2 : float or numpy.array of float
+            second point's latitude coordinate
+        lng2 : float or numpy.array of float
+            second point's longitude coordinate
+        earth_radius : float
+            earth's radius in units in which distance will be returned (default is
+            meters)
+
+        Returns
+        -------
+        dist : float or numpy.array of float
+            distance from each (lat1, lng1) to each (lat2, lng2) in units of
+            earth_radius
+        """
+        y1 = np.deg2rad(lat1)
+        y2 = np.deg2rad(lat2)
+        dy = y2 - y1
+
+        x1 = np.deg2rad(lng1)
+        x2 = np.deg2rad(lng2)
+        dx = x2 - x1
+
+        h = np.sin(dy / 2) ** 2 + np.cos(y1) * np.cos(y2) * np.sin(dx / 2) ** 2
+        h = np.minimum(1, h)  # protect against floating point errors
+        arc = 2 * np.arcsin(np.sqrt(h))
+
+        # return distance in units of earth_radius
+        return arc * earth_radius
+
+    def distance(x, y):
+        for i in range(len(x)):
+            dist = 0
+            for j in range(1, len(x[i])):
+                lat1 = y[i][j - 1]
+                lng1 = x[i][j - 1]
+                lat2 = y[i][j]
+                lng2 = x[i][j]
+                dist += great_circle_vec(lat1, lng1, lat2, lng2)
+            yield dist.round(3)
+
     # 0-2: configurations
     # set poi arguments
     node_highway_pp = 'projected_pap'  # POI Access Point
@@ -202,8 +263,9 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, th
 
     ## STAGE 1: interpolation
     # 1-1: update external nodes (pois)
-    print("Updating external nodes...")
-    nodes_meter, _ = update_nodes(nodes_meter, pois_meter, ptype='poi', meter_epsg=meter_epsg)
+    if node_pois:
+        print("Updating external nodes...")
+        nodes_meter, _ = update_nodes(nodes_meter, pois_meter, ptype='poi', meter_epsg=meter_epsg)
 
     # 1-2: update internal nodes (interpolated pps)
     # locate nearest edge (kne) and projected point (pp)
@@ -248,13 +310,6 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, th
     nodes.index = nodes['osmid']  # IMPORTANT
     nodes['x'] = [p.x for p in nodes['geometry']]
     nodes['y'] = [p.y for p in nodes['geometry']]
-
-    # edges.reset_index(drop=True, inplace=True)
-    # edges['length'] = edges['length'].astype(float)
-
-
-    # TODO: UPDATE LENGTH OF EDGES USING GREATER POLAR DISTANCE
-    
 
     # report issues
     # - examine key duplication
