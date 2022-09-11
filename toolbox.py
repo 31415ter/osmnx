@@ -4,6 +4,8 @@
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import osmnx as ox
+import networkx as nx
 
 import rtree
 import itertools
@@ -12,6 +14,66 @@ from shapely.geometry import MultiPoint, LineString
 from shapely.ops import snap, split
 
 pd.options.mode.chained_assignment = None
+
+def initialize_pois(G, city, tags, crs = 'epsg:4326'):
+    """
+    Initialize POIs from OSM.
+
+    Parameters
+    ----------
+    G : networkx graph
+        graph of the city
+    city : String
+        city name
+    tags : dict
+        POI tags
+    crs : string
+        coordinate reference system
+
+    Returns
+    -------
+    pois : GeoDataFrame
+        POIs GeoDataFrame
+    nodes : GeoDataFrame
+        nodes GeoDataFrame
+    edges : GeoDataFrame
+        edges GeoDataFrame
+    """
+
+
+    # retrieve nodes and undirected edges from graph
+    # undirected edges are retrieved, becase we only identify the nearest node to a POI
+    # and in a later step the missing reverse edges are added
+    nodes, edges = ox.utils_graph.graph_to_gdfs(ox.utils_graph.get_undirected(G))
+
+    # set u,v,k columns to the edges gdf
+    u = [u for u,v,k in list(edges.index)]
+    v = [v for u,v,k in list(edges.index)]
+    k = [k for u,v,k in list(edges.index)]
+    edges.index = range(0, len(edges))
+    edges['u'] = u
+    edges['v'] = v
+    edges['k'] = k
+
+    # set nodes index to unique values, while saving the osmids
+    nodes['osmid'] = nodes.index
+    nodes.index = range(0, len(nodes))
+
+    # retrieve pois from osm
+    pois = ox.geometries.geometries_from_place(city, buffer_dist=100, tags=tags)
+    pois = pois.to_crs('epsg:4326')
+
+    # select only pois that are defined as points (nodes in osm)
+    # and set longitude, latitude and drop the multi-index
+    pois = pois[pois['geometry'].geom_type == 'Point']
+    pois['lon'] = pois['geometry'].apply(lambda p: p.x)
+    pois['lat'] = pois['geometry'].apply(lambda p: p.y)
+    pois = pois.droplevel('element_type')
+    
+     # set a primary key column, the pois must have a unique id
+    pois['key'] = pois.index 
+
+    return pois, nodes, edges
 
 def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, node_pois = False, dict_tags = None, threshold=200, knn=5, meter_epsg=4326):
     """Connect and integrate a set of POIs into an existing road network.
@@ -325,3 +387,61 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
     print("Missing 'to' nodes:", len(edges[edges['to'] == None]))
 
     return nodes, edges
+
+def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
+    """
+    Create a graph from GeoDataFrame of edges and nodes.
+
+    Parameters
+    ----------
+    edges : GeoDataFrame
+        edges GeoDataFrame
+    nodes : GeoDataFrame
+        nodes GeoDataFrame
+    crs : string
+        coordinate reference system
+
+    Returns
+    -------
+    V : networkx graph
+        graph
+    """
+
+    def add_reverse_edges(G):
+        from shapely.geometry import LineString
+        oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
+        for u,v,data in list(G.edges(data=True)):
+            if "oneway" in data and data["oneway"] not in oneway_values:
+                new_data = data.copy()
+                new_data["reversed"] = True
+                new_data["geometry"] = LineString(list(new_data["geometry"].coords)[::-1])
+                if "key" in new_data:
+                    new_data.pop("key")
+
+                # check if edge v,u exists in G
+                key_list = list(G[u][v])
+                if G.has_edge(v, u):
+                    key_list += list(G[v][u])
+                new_key = max(key_list) + 1
+
+                G.add_edge(v,u, key = new_key, **new_data)
+
+    # create graph based on edges gdf
+    V = nx.from_pandas_edgelist(df = edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'k')
+
+    # add node attributes to graph based on nodes gdf
+    nx.set_node_attributes(V, nodes.set_index('osmid').to_dict('index'))
+
+    # add crs to graph
+    V.graph["crs"] = crs
+
+    # add reverse edges to graph
+    # because they were not in the edges gdf
+    add_reverse_edges(V)
+
+    return V
+
+def graph_with_pois_inserted(G, city, tags, key_col='osmid', projected_footways=False, node_pois=False, dict_tags = {'amenity', 'name'}):
+    pois, nodes, edges = initialize_pois(G, city, tags)
+    new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col=key_col, projected_footways=projected_footways, node_pois=node_pois, dict_tags=dict_tags)
+    return graph_from_gpd(new_edges, new_nodes)
