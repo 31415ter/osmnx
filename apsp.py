@@ -2,6 +2,7 @@ import pandas as pd
 import osmnx as ox
 import warnings
 import numpy as np
+import networkx as nx
 
 from shapely.errors import ShapelyDeprecationWarning
 from shapely.geometry import LineString
@@ -77,14 +78,44 @@ def _construct_linestring(paths):
 ox.config(log_file=True, log_console=True, use_cache=True)
 
 cf = (
-    f'["highway"]["highway"~"primary|secondary|tertiary|unclassified|residential|living_street|service"]'
+    f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary"]'
     f'["access"!~"no|private"]'
 )
 
-G = ox.graph_from_place('Delft', custom_filter = cf)
-remove = [node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0]
-G.remove_nodes_from(remove)
-# ox.save_graph_geopackage(G, filepath="./data/gieten_network.gpkg", directed = True)
+hwy_speeds = {'motorway': 100,
+                'motorway_link': 100,
+                'trunk': 70,
+                'trunk_link': 70,
+                'primary': 50,
+                'primary_link': 50,
+                'secondary': 50,
+                'secondary_link': 50,
+                'tertiary': 50,
+                'tertiary_link': 50,
+                'unclassified': 30,
+                'residential': 30,
+                'living_street': 5}
+
+rotterdam_graph = ox.graph_from_place("Rotterdam", custom_filter = cf, buffer_dist=2000, truncate_by_edge=True, simplify=False)
+hoogvliet_graph = ox.graph_from_place("Hoogvliet", custom_filter = cf, buffer_dist=3000, truncate_by_edge=True, simplify=False)
+schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist=1000, truncate_by_edge=True, simplify=False)
+
+G = nx.compose(rotterdam_graph, hoogvliet_graph)
+G = nx.compose(G, schiedam_graph)
+
+G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
+G = ox.simplify_graph(G, allow_lanes_diff=False)
+
+removed_nodes_list = []
+removed_nodes = True
+while removed_nodes:
+    remove = [node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0]
+    if len(remove) == 0:
+        removed_nodes = False
+    removed_nodes_list += remove
+    G.remove_nodes_from(remove)
+
+ox.save_graph_geopackage(G, filepath="./data/full_Rotterdam_network.gpkg", directed = True)
 
 targets = list(G)
 sources = list(G)
