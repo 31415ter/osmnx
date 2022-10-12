@@ -1,8 +1,8 @@
 import networkx as nx
 import osmnx as ox
-from toolbox import *
+from osmnx import toolbox 
 
-tags = {'amenity': ['restaurant', 'pub', 'cafe', 'fast_food', 'bar']}
+tags = {'amenity': ['pub', 'cafe', 'bar']} # 'fast_food', 'restaurant'
 
 useful_tags_way = [
     "bridge",
@@ -43,6 +43,6 @@ G = nx.compose(G3, G)
 G = ox.utils_graph.get_largest_component(G) # do not consider disconnected components
 G = ox.simplify_graph(G)
 
-G = graph_with_pois_inserted(G, city, tags)
+G = toolbox.graph_with_pois_inserted(G, city, tags)
 
 ox.save_graph_geopackage(G, filepath="./data/" + city + "_2_pois_network.gpkg", directed = True)

@@ -17,6 +17,48 @@ from . import settings
 from . import utils
 from . import utils_graph
 
+def great_circle_vec(lat1, lng1, lat2, lng2, earth_radius = 6_371_009):
+        """
+        Calculate great-circle distances between pairs of points.
+
+        Vectorized function to calculate the great-circle distance between two
+        points' coordinates or between arrays of points' coordinates using the
+        haversine formula. Expects coordinates in decimal degrees.
+
+        Parameters
+        ----------
+        lat1 : float or numpy.array of float
+            first point's latitude coordinate
+        lng1 : float or numpy.array of float
+            first point's longitude coordinate
+        lat2 : float or numpy.array of float
+            second point's latitude coordinate
+        lng2 : float or numpy.array of float
+            second point's longitude coordinate
+        earth_radius : float
+            earth's radius in units in which distance will be returned (default is
+            meters)
+
+        Returns
+        -------
+        dist : float or numpy.array of float
+            distance from each (lat1, lng1) to each (lat2, lng2) in units of
+            earth_radius
+        """
+        y1 = np.deg2rad(lat1)
+        y2 = np.deg2rad(lat2)
+        dy = y2 - y1
+
+        x1 = np.deg2rad(lng1)
+        x2 = np.deg2rad(lng2)
+        dx = x2 - x1
+
+        h = np.sin(dy / 2) ** 2 + np.cos(y1) * np.cos(y2) * np.sin(dx / 2) ** 2
+        h = np.minimum(1, h)  # protect against floating point errors
+        arc = 2 * np.arcsin(np.sqrt(h))
+
+        # return distance in units of earth_radius
+        return arc * earth_radius
 
 def sample_points(G, n):
     """

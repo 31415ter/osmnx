@@ -259,6 +259,12 @@ def _get_paths_to_simplify(G, strict=True, allow_lanes_diff=True):
                 # next endpoint node
                 yield _build_path(G, endpoint, successor, endpoints)
 
+def flatten(l):
+    new_list = []
+    for x in l:
+        if isinstance(x, list): new_list += [item for item in x]
+        else: new_list += [x]
+    return new_list
 
 def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
     """
@@ -293,8 +299,8 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
         topologically simplified graph, with a new `geometry` attribute on
         each simplified edge
     """
-    if "simplified" in G.graph and G.graph["simplified"]:  # pragma: no cover
-        raise Exception("This graph has already been simplified, cannot simplify it again.")
+    # if "simplified" in G.graph and G.graph["simplified"]:  # pragma: no cover
+    #     raise Exception("This graph has already been simplified, cannot simplify it again.")
 
     utils.log("Begin topologically simplifying the graph...")
 
@@ -326,6 +332,9 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
             # get edge between these nodes: if multiple edges exist between
             # them (see above), we retain only one in the simplified graph
             edge_data = G.edges[u, v, 0]
+            if "geometry" in edge_data: 
+                edge_data['geometry'] = list(edge_data['geometry'].coords)
+
             for attr in edge_data:
                 if attr in path_attributes:
                     # if this key already exists in the dict, append it to the
@@ -335,24 +344,29 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
                     # if this key doesn't already exist, set the value to a list
                     # containing the one value
                     path_attributes[attr] = [edge_data[attr]]
+            if "geometry" in path_attributes: 
+                path_attributes['geometry'] = flatten(path_attributes['geometry'])
 
         # consolidate the path's edge segments' attribute values
         for attr in path_attributes:
             if attr in attrs_to_sum:
                 # if this attribute must be summed, sum it now
                 path_attributes[attr] = sum(path_attributes[attr])
-            elif len(set(path_attributes[attr])) == 1:
+            elif attr == "geometry":
+                path_attributes[attr] = LineString([Point(node) for node in path_attributes[attr]])
+            elif len(set(flatten(path_attributes[attr]))) == 1:
                 # if there's only 1 unique value in this attribute list,
                 # consolidate it to the single value (the zero-th):
                 path_attributes[attr] = path_attributes[attr][0]
             else:
                 # otherwise, if there are multiple values, keep one of each
-                path_attributes[attr] = list(set(path_attributes[attr]))
+                path_attributes[attr] = list(set(flatten(path_attributes[attr])))
 
-        # construct the new consolidated edge's geometry for this path
-        path_attributes["geometry"] = LineString(
-            [Point((G.nodes[node]["x"], G.nodes[node]["y"])) for node in path]
-        )
+        # construct the new consolidated edge's geometry for this path if none exists yet
+        if "geometry" not in path_attributes :
+            path_attributes["geometry"] = LineString(
+                [Point((G.nodes[node]["x"], G.nodes[node]["y"])) for node in path]
+            )
 
         # add the nodes and edge to their lists for processing at the end
         all_nodes_to_remove.extend(path[1:-1])

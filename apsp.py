@@ -6,7 +6,8 @@ import networkx as nx
 
 from shapely.errors import ShapelyDeprecationWarning
 from shapely.geometry import LineString
-from fibheap import *
+from osmnx import utils
+from osmnx.utils_geo import great_circle_vec
 
 warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning) 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -102,18 +103,75 @@ schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist
 
 G = nx.compose(rotterdam_graph, hoogvliet_graph)
 G = nx.compose(G, schiedam_graph)
-
-G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
 G = ox.simplify_graph(G, allow_lanes_diff=False)
+G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
 
+def sharp_turn(G, node, threshold = 40):
+    """
+    Returns true if the node is a sharp turn
+    """
+
+    if "geometry" in list(G.in_edges(node, data = True))[0][2]:
+        start_lat = list(G.in_edges(node, data = True))[0][2]['geometry'].coords[-2][1]
+        start_lng = list(G.in_edges(node, data = True))[0][2]['geometry'].coords[-2][0]
+    else:
+        start_lat = G.nodes[list(G.in_edges(node, data = True))[0][0]]['y']
+        start_lng = G.nodes[list(G.in_edges(node, data = True))[0][0]]['x']
+
+    mid_lat = G.nodes[node]['y']
+    mid_lng = G.nodes[node]['x']
+
+    if "geometry" in list(G.out_edges(node, data = True))[0][2]:
+        end_lat = list(G.out_edges(node, data = True))[0][2]['geometry'].coords[1][1]
+        end_lng = list(G.out_edges(node, data = True))[0][2]['geometry'].coords[1][0]	
+    else:
+        end_lat = G.nodes[list(G.out_edges(node, data = True))[0][1]]['y']
+        end_lng = G.nodes[list(G.out_edges(node, data = True))[0][1]]['x']
+
+    b = great_circle_vec(start_lat, start_lng, mid_lat, mid_lng)
+    c = great_circle_vec(mid_lat, mid_lng, end_lat, end_lng)
+    a = great_circle_vec(start_lat, start_lng, end_lat, end_lng)
+
+    # calculate angle using law of cosines
+    angle = np.arccos((b**2 + c**2 - a**2) / (2 * b * c))
+
+    return np.degrees(angle) < threshold
+    
 removed_nodes_list = []
 removed_nodes = True
+
+utils.log("Begin removing deadends...")
+
 while removed_nodes:
-    remove = [node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0]
-    if len(remove) == 0:
+    # Remove nodes which only have incoming or outgoing edges
+    dead_ends = [node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0]
+
+    # Remove nodes with only one incoming and one outgoing edge, and these two edges originate from the same nodes (i.e., (u,v,k) == (v,u,k))
+    forbidden_u_turns = [node for node in G.nodes() if (
+        len(G.in_edges(node)) == 1 
+        and len(G.out_edges(node)) == 1 
+        and list(G.in_edges(node, keys = True))[0][0] == list(G.out_edges(node, keys = True))[0][1] # u == v
+        and list(G.in_edges(node, keys = True))[0][1] == list(G.out_edges(node, keys = True))[0][0] # v == u
+        and list(G.in_edges(node, keys = True))[0][2] == list(G.out_edges(node, keys = True))[0][2] # keys should be equal
+        )
+    ]
+
+    sharp_turns = [node for node in G.nodes() if (
+        len(G.in_edges(node)) == 1 
+        and len(G.out_edges(node)) == 1 
+        and sharp_turn(G, node)
+        )
+    ]
+
+    if len(dead_ends + forbidden_u_turns + sharp_turns) == 0:
         removed_nodes = False
-    removed_nodes_list += remove
-    G.remove_nodes_from(remove)
+
+    removed_nodes_list += dead_ends + forbidden_u_turns + sharp_turns
+    G.remove_nodes_from(dead_ends + forbidden_u_turns + sharp_turns)
+
+print(len(removed_nodes_list))
+
+G = ox.simplify_graph(G, allow_lanes_diff=False)
 
 ox.save_graph_geopackage(G, filepath="./data/full_Rotterdam_network.gpkg", directed = True)
 

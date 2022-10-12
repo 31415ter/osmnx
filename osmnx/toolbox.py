@@ -1,6 +1,9 @@
 # Yuwen Chang
 # 2020-08-16
 
+# PAJ Versfelt
+# 14-09-2022
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -40,9 +43,8 @@ def initialize_pois(G, city, tags, crs = 'epsg:4326'):
         edges GeoDataFrame
     """
 
-
     # retrieve nodes and undirected edges from graph
-    # undirected edges are retrieved, becase we only identify the nearest node to a POI
+    # undirected edges are retrieved, becase we only identify the nearest edge to a POI
     # and in a later step the missing reverse edges are added
     nodes, edges = ox.utils_graph.graph_to_gdfs(ox.utils_graph.get_undirected(G))
 
@@ -70,7 +72,7 @@ def initialize_pois(G, city, tags, crs = 'epsg:4326'):
     pois['lat'] = pois['geometry'].apply(lambda p: p.y)
     pois = pois.droplevel('element_type')
     
-     # set a primary key column, the pois must have a unique id
+    # set a primary key column, the pois must have a unique id
     pois['key'] = pois.index 
 
     return pois, nodes, edges
@@ -96,8 +98,9 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
                               and be aware not to intersect with the node key,
                               'osmid' if you use OSM data, in the nodes gdf.
         projected_footways (bool): whether to generate projected footways.
-        node_pois (bool): whether to generate nodes for POIs.
-        dict_tags (dict): a dictionary of tags to be added to the new nodes.
+        node_pois (bool): whether to generate additional nodes for POIs, 
+                        these nodes are only connected to the graph if projected_footways is True.
+        dict_tags (dict): a dictionary of tags that the projected nodes will contain.
         threshold (int): the max length of a POI connection edge, POIs with
                          connection edge beyond this length will be removed.
                          The unit is in meters as crs epsg is set to 3857 by
@@ -255,49 +258,6 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
         # all edges, newly added edges only
         return edges, new_edges
 
-    def great_circle_vec(lat1, lng1, lat2, lng2, earth_radius = 6_371_009):
-        """
-        Calculate great-circle distances between pairs of points.
-
-        Vectorized function to calculate the great-circle distance between two
-        points' coordinates or between arrays of points' coordinates using the
-        haversine formula. Expects coordinates in decimal degrees.
-
-        Parameters
-        ----------
-        lat1 : float or numpy.array of float
-            first point's latitude coordinate
-        lng1 : float or numpy.array of float
-            first point's longitude coordinate
-        lat2 : float or numpy.array of float
-            second point's latitude coordinate
-        lng2 : float or numpy.array of float
-            second point's longitude coordinate
-        earth_radius : float
-            earth's radius in units in which distance will be returned (default is
-            meters)
-
-        Returns
-        -------
-        dist : float or numpy.array of float
-            distance from each (lat1, lng1) to each (lat2, lng2) in units of
-            earth_radius
-        """
-        y1 = np.deg2rad(lat1)
-        y2 = np.deg2rad(lat2)
-        dy = y2 - y1
-
-        x1 = np.deg2rad(lng1)
-        x2 = np.deg2rad(lng2)
-        dx = x2 - x1
-
-        h = np.sin(dy / 2) ** 2 + np.cos(y1) * np.cos(y2) * np.sin(dx / 2) ** 2
-        h = np.minimum(1, h)  # protect against floating point errors
-        arc = 2 * np.arcsin(np.sqrt(h))
-
-        # return distance in units of earth_radius
-        return arc * earth_radius
-
     def distance(x, y):
         for i in range(len(x)):
             dist = 0
@@ -443,5 +403,14 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
 
 def graph_with_pois_inserted(G, city, tags, key_col='osmid', projected_footways=False, node_pois=False, dict_tags = {'amenity', 'name'}):
     pois, nodes, edges = initialize_pois(G, city, tags)
-    new_nodes, new_edges = connect_poi(pois, nodes, edges, key_col=key_col, projected_footways=projected_footways, node_pois=node_pois, dict_tags=dict_tags)
+
+    new_nodes, new_edges = connect_poi(pois, 
+        nodes, 
+        edges, 
+        key_col=key_col, 
+        projected_footways=projected_footways, 
+        node_pois=node_pois, 
+        dict_tags=dict_tags
+    )
+
     return graph_from_gpd(new_edges, new_nodes)
