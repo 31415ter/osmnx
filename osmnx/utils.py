@@ -331,3 +331,12 @@ def _get_logger(level, name, filename):
         logger.handler_set = True
 
     return logger
+
+
+def flatten(_list):
+    new_list = []
+    for element in _list:
+        # if element in the list is a list, flatten the list
+        if isinstance(element, list): new_list += [item for item in element]
+        else: new_list += [element]
+    return new_list

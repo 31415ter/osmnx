@@ -266,7 +266,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
                 lng1 = x[i][j - 1]
                 lat2 = y[i][j]
                 lng2 = x[i][j]
-                dist += great_circle_vec(lat1, lng1, lat2, lng2)
+                dist += ox.distance.great_circle_vec(lat1, lng1, lat2, lng2)
             yield dist.round(3)
 
     # 0-2: configurations

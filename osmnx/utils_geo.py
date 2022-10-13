@@ -16,49 +16,7 @@ from . import projection
 from . import settings
 from . import utils
 from . import utils_graph
-
-def great_circle_vec(lat1, lng1, lat2, lng2, earth_radius = 6_371_009):
-        """
-        Calculate great-circle distances between pairs of points.
-
-        Vectorized function to calculate the great-circle distance between two
-        points' coordinates or between arrays of points' coordinates using the
-        haversine formula. Expects coordinates in decimal degrees.
-
-        Parameters
-        ----------
-        lat1 : float or numpy.array of float
-            first point's latitude coordinate
-        lng1 : float or numpy.array of float
-            first point's longitude coordinate
-        lat2 : float or numpy.array of float
-            second point's latitude coordinate
-        lng2 : float or numpy.array of float
-            second point's longitude coordinate
-        earth_radius : float
-            earth's radius in units in which distance will be returned (default is
-            meters)
-
-        Returns
-        -------
-        dist : float or numpy.array of float
-            distance from each (lat1, lng1) to each (lat2, lng2) in units of
-            earth_radius
-        """
-        y1 = np.deg2rad(lat1)
-        y2 = np.deg2rad(lat2)
-        dy = y2 - y1
-
-        x1 = np.deg2rad(lng1)
-        x2 = np.deg2rad(lng2)
-        dx = x2 - x1
-
-        h = np.sin(dy / 2) ** 2 + np.cos(y1) * np.cos(y2) * np.sin(dx / 2) ** 2
-        h = np.minimum(1, h)  # protect against floating point errors
-        arc = 2 * np.arcsin(np.sqrt(h))
-
-        # return distance in units of earth_radius
-        return arc * earth_radius
+from . import distance
 
 def sample_points(G, n):
     """
@@ -523,3 +481,68 @@ def bbox_to_poly(north, south, east, west):
     shapely.geometry.Polygon
     """
     return Polygon([(west, south), (east, south), (east, north), (west, north)])
+
+
+# For the life of me, couldnt figure out how to calculate the angle between two lines that correspond to the values obtained in QGIS.
+# So I just used the law of cosines and later figured out whether the angle was positive or negative by applying the cross product.
+# This could problably be done in a much more elegant way, but it works.
+def angle(G, in_edge, out_edge):
+    """
+    Calculate the angle between two edges in a graph.
+    
+    Parameters
+    ----------
+    G : networkx.MultiDiGraph
+    in_edge : tuple
+        the edge entering the node
+    out_edge : tuple
+        the edge exiting the node
+
+    Returns
+    -------
+    float
+        the angle between the two edges in degrees
+    """
+
+    in_edge_data = in_edge[2]
+    out_edge_data = out_edge[2]
+
+    # check if the in_edge has a geometry attribute, 
+    # if the edge contains the geometry attribute, select the second last coordinates of the geometry
+    # else, it means that the in_edge is a straight line and thus the starting node of the in_edge must be selected
+    if "geometry" in in_edge_data:
+        start_lng = in_edge_data['geometry'].coords[-2][0] # select second last lng coordinate of the edge
+        start_lat = in_edge_data['geometry'].coords[-2][1] # select second last lat coordinate of the edge       
+    else:
+        start_lng = G.nodes[in_edge[0]]['x']
+        start_lat = G.nodes[in_edge[0]]['y']
+
+    # select the coordinates of the end node of the in_edge (which is the same as the starting node of the out_edge)
+    mid_lng = G.nodes[in_edge[1]]['x']
+    mid_lat = G.nodes[in_edge[1]]['y']
+    
+    # check if the out_edge has a geometry attribute, 
+    # if the edge contains the geometry attribute, select the second last coordinates of the geometry
+    # else, it means that the out_edge is a straight line and thus the starting node of the out_edge must be selected
+    if "geometry" in out_edge_data:
+        end_lng = out_edge_data['geometry'].coords[1][0]
+        end_lat = out_edge_data['geometry'].coords[1][1]        
+    else:
+        end_lng = G.nodes[out_edge[1]]['x']
+        end_lat = G.nodes[out_edge[1]]['y']
+
+    # calculate the distances between the three points
+    b = distance.great_circle_vec(start_lat, start_lng, mid_lat, mid_lng)
+    c = distance.great_circle_vec(mid_lat, mid_lng, end_lat, end_lng)
+    a = distance.great_circle_vec(start_lat, start_lng, end_lat, end_lng)
+
+    # calculate angle using law of cosines
+    angle = np.arccos((b**2 + c**2 - a**2) / (2 * b * c))
+
+    # determine whether (end_lat, end_lng) is on the left or right side of the line between (start_lat, start_lng) and (mid_lat, mid_lng)
+    # if the point is on the left side, the angle is negative
+    # this code uses the cross product (https://en.wikipedia.org/wiki/Cross_product)
+    if (end_lat - start_lat) * (mid_lng - start_lng) - (end_lng - start_lng) * (mid_lat - start_lat) < 0:
+        angle = -angle
+
+    return np.degrees(angle)

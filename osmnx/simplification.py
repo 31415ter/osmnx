@@ -38,8 +38,7 @@ def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
         if False, allow nodes to be end points even if they fail all other rules
         but have edges with different OSM IDs
     allow_lanes_diff : bool
-        if False, do not consider nodes to be end points if incident edges have 
-        varying number of lanes.
+        if False, nodes cannot be endpoints if incident edges have varying number of lanes.
 
     Returns
     -------
@@ -113,20 +112,20 @@ def _different_lanes(G, node):
     -------
     bool
     """
-    # get the in and out edge of the examined node, but only consider the edges where "reverse" is false
-    # as potentially two edges are created for each two-way street in a bi-directinal graph
-    in_edge = [d for u,v,d in G.in_edges(node, data=True) if d["reversed"] == False]
-    out_edge = [d for u,v,d in G.out_edges(node, data=True) if d["reversed"] == False]
+    # get the in and out edges of the examined node
+    in_edge = [d for u,v,d in G.in_edges(node, data=True)]
+    out_edge = [d for u,v,d in G.out_edges(node, data=True)]
 
     # retrieve all lane counts of the in and out edges using the assumptions when lanes are not specified,
     # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
+    # a roundabout is assumed to have 1 lane, if not specified otherwise
     lanes = set()
     lanes_forward = set()
     lanes_backward = set()
     for edge in in_edge + out_edge:
         if "lanes" in edge: 
-            lanes.add(edge["lanes"])
-        elif edge["oneway"] == "yes":
+            lanes.add(int(edge["lanes"]))
+        elif edge["oneway"] in {"yes", True, 1, "true", "1"}:
             lanes.add(1)
         elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
             lanes.add(2)
@@ -259,12 +258,6 @@ def _get_paths_to_simplify(G, strict=True, allow_lanes_diff=True):
                 # next endpoint node
                 yield _build_path(G, endpoint, successor, endpoints)
 
-def flatten(l):
-    new_list = []
-    for x in l:
-        if isinstance(x, list): new_list += [item for item in x]
-        else: new_list += [x]
-    return new_list
 
 def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
     """
@@ -334,6 +327,8 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
             edge_data = G.edges[u, v, 0]
             if "geometry" in edge_data: 
                 edge_data['geometry'] = list(edge_data['geometry'].coords)
+            else:
+                edge_data['geometry'] = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
 
             for attr in edge_data:
                 if attr in path_attributes:
@@ -344,8 +339,9 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
                     # if this key doesn't already exist, set the value to a list
                     # containing the one value
                     path_attributes[attr] = [edge_data[attr]]
-            if "geometry" in path_attributes: 
-                path_attributes['geometry'] = flatten(path_attributes['geometry'])
+            
+            path_attributes['geometry'] = utils.flatten(path_attributes['geometry'])
+
 
         # consolidate the path's edge segments' attribute values
         for attr in path_attributes:
@@ -354,13 +350,13 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
                 path_attributes[attr] = sum(path_attributes[attr])
             elif attr == "geometry":
                 path_attributes[attr] = LineString([Point(node) for node in path_attributes[attr]])
-            elif len(set(flatten(path_attributes[attr]))) == 1:
+            elif len(set(utils.flatten(path_attributes[attr]))) == 1:
                 # if there's only 1 unique value in this attribute list,
                 # consolidate it to the single value (the zero-th):
                 path_attributes[attr] = path_attributes[attr][0]
             else:
                 # otherwise, if there are multiple values, keep one of each
-                path_attributes[attr] = list(set(flatten(path_attributes[attr])))
+                path_attributes[attr] = list(set(utils.flatten(path_attributes[attr])))
 
         # construct the new consolidated edge's geometry for this path if none exists yet
         if "geometry" not in path_attributes :
