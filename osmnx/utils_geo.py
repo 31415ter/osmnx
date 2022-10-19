@@ -501,7 +501,7 @@ def angle(G, in_edge, out_edge):
     Returns
     -------
     float
-        the angle between the two edges in degrees
+        the angle between the two edges in degrees (-180 to 180)
     """
 
     in_edge_data = in_edge[2]

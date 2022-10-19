@@ -90,6 +90,7 @@ def add_edge_speeds(G, hwy_speeds=None, fallback=None, precision=1, agg=np.mean)
     # highway type
     for hwy, group in edges.groupby("highway"):
         if hwy not in hwy_speed_avg:
+            print(f"Computing the speed of {hwy} type by taking mean of preexisting values, as it does not exists in hwy_speeds")
             hwy_speed_avg.loc[hwy] = agg(group["speed_kph"])
 
     # if any highway types had no preexisting speed values, impute their speed

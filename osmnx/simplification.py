@@ -295,10 +295,10 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
     # if "simplified" in G.graph and G.graph["simplified"]:  # pragma: no cover
     #     raise Exception("This graph has already been simplified, cannot simplify it again.")
 
-    utils.log("Begin topologically simplifying the graph...")
+    if len(nx.get_edge_attributes(G, "speed_kph")) != len(G.edges):
+        raise Exception("All edges must have a speed_kph attribute (assigned by add_edge_speeds)")
 
-    # define edge segment attributes to sum upon edge simplification
-    attrs_to_sum = {"length", "travel_time"}
+    utils.log("Begin topologically simplifying the graph...")
 
     # make a copy to not mutate original graph object caller passed in
     G = G.copy()
@@ -325,9 +325,13 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
             # get edge between these nodes: if multiple edges exist between
             # them (see above), we retain only one in the simplified graph
             edge_data = G.edges[u, v, 0]
+
+            
             if "geometry" in edge_data: 
+                # if this edge has a geometry, set the geometry equal to the coordinates of the linestring
                 edge_data['geometry'] = list(edge_data['geometry'].coords)
             else:
+                # if the edge has no geometry, set the geometry equal to the coordinates of the start and end nodes
                 edge_data['geometry'] = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
 
             for attr in edge_data:
@@ -340,14 +344,28 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
                     # containing the one value
                     path_attributes[attr] = [edge_data[attr]]
             
+            # flatten the list of coordinates for the geometry
             path_attributes['geometry'] = utils.flatten(path_attributes['geometry'])
 
 
         # consolidate the path's edge segments' attribute values
         for attr in path_attributes:
-            if attr in attrs_to_sum:
-                # if this attribute must be summed, sum it now
-                path_attributes[attr] = sum(path_attributes[attr])
+            if attr == "length":
+                # the attribute "length" should be the sum of the lengths for a given max speed (speed_kph) of the edges in the path
+                # the lengths are sorted in ascending order of the speed_kph
+                length_dict = dict()
+                for length, speed_kph in zip(utils.flatten(path_attributes[attr]), utils.flatten(path_attributes["speed_kph"])):
+                    if speed_kph in length_dict:
+                        length_dict[speed_kph] += length
+                    else:
+                        length_dict[speed_kph] = length
+                path_attributes[attr] = [length_dict[key] for key in sorted(length_dict)]
+            elif attr == "speed_kph":
+                # the attribute "speed_kph" should be the set of speeds for the edges in the path
+                # the speeds are sorted in ascending order
+                speed_kph_list = list(set(utils.flatten(path_attributes[attr])))
+                speed_kph_list.sort()
+                path_attributes[attr] = speed_kph_list
             elif attr == "geometry":
                 path_attributes[attr] = LineString([Point(node) for node in path_attributes[attr]])
             elif len(set(utils.flatten(path_attributes[attr]))) == 1:
@@ -355,7 +373,7 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
                 # consolidate it to the single value (the zero-th):
                 path_attributes[attr] = path_attributes[attr][0]
             else:
-                # otherwise, if there are multiple values, keep one of each
+                # otherwise, if there are multiple values, keep one of each in the order they are encountered
                 path_attributes[attr] = list(set(utils.flatten(path_attributes[attr])))
 
         # construct the new consolidated edge's geometry for this path if none exists yet
