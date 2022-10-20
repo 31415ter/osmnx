@@ -111,32 +111,45 @@ if __name__ == '__main__':
         for edge in G.edges(data=True, keys = True) 
         if set(edge[3]["highway"]).isdisjoint({"primary", "primary_link", "secondary", "secondary_link"})
     ]
-    required_edges = required_edges[0:1000]
 
-    distance_df = pd.DataFrame(index = required_edges, columns = required_edges)
-    path_df = pd.DataFrame(index = required_edges, columns = required_edges)
+    edge_count = 250
+
+    distance_df_workers = pd.DataFrame(index = required_edges[0:edge_count], columns = required_edges)
+    path_df_workers = pd.DataFrame(index = required_edges[0:edge_count], columns = required_edges)
+
+    distance_df_non_workers = pd.DataFrame(index = required_edges, columns = required_edges)
+    path_df_non_workers = pd.DataFrame(index = required_edges, columns = required_edges)
 
     print("Start calculating distances")
 
     MAX_SPEED = 100
 
     start = time.time()
-    args = [(G, edge, required_edges, MAX_SPEED) for edge in required_edges]
+    args = [(G, edge, required_edges, MAX_SPEED) for edge in required_edges[0:edge_count]]
     with mp.Pool(processes=mp.cpu_count()) as pool:  
         results = pool.starmap(dijkstra, args)
     end = time.time()
     print("-------------------------------------------")
     print(f"With workers completed in {round(end-start,2)}")
 
-    count = 0
-    start = time.time()
-    for edge in required_edges:
-        count += 1
-        # print(count)
-        travel_times, predecessors = dijkstra(G, edge, required_edges, MAX_SPEED)
+    for i in range(len(required_edges[0:edge_count])):
+        mask = (distance_df_workers.index == required_edges[i])
+        distance_df_workers.loc[mask, results[i][0].keys()] = list(results[i][0].values())
 
-        # mask = (distance_df.index == edge)
-        # distance_df.loc[mask, travel_times.keys()] = list(travel_times.values())
-    end = time.time()
-    print("-------------------------------------------")
-    print(f"Without workers completed in {round(end-start,2)}")
+    distance_df_workers.columns = [str(i) for i in range(len(required_edges))]
+    distance_df_workers.to_parquet(f"./data/Rotterdam_distance_{0}_{500}.parquet.gzip", engine='pyarrow', compression='GZIP')
+
+    # count = 0
+    # start = time.time()
+    # for edge in required_edges:
+    #     count += 1
+    #     # print(count)
+    #     travel_times, predecessors = dijkstra(G, edge, required_edges, MAX_SPEED)
+
+    #     mask = (distance_df_non_workers.index == edge)
+    #     distance_df_non_workers.loc[mask, travel_times.keys()] = list(travel_times.values())
+    # end = time.time()
+    # print("-------------------------------------------")
+    # print(f"Without workers completed in {round(end-start,2)}")
+
+    # print("Start calculating paths")
