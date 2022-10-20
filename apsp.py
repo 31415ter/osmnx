@@ -1,122 +1,19 @@
-import pandas as pd
-import warnings
+import os
+import time
 import numpy as np
-import networkx as nx
-
+import multiprocessing as mp
 import osmnx as ox
+import pandas as pd
+import geopandas as gpd
 
-from shapely.errors import ShapelyDeprecationWarning
-from shapely.geometry import LineString
 from osmnx import utils
-
 from fibheap import *
+from time import sleep
+from random import random
+from multiprocessing import Pool
+from shapely.geometry import Point, LineString
 
-warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning) 
-warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
-
-ox.config(log_file=True, log_console=True, use_cache=True)
-
-cf = (
-    f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified"]'
-    f'["access"!~"no|private"]'
-)
-
-hwy_speeds = {  
-    'motorway': 100,
-    'motorway_link': 100,
-    'trunk': 70,
-    'trunk_link': 70,
-    'primary': 50,
-    'primary_link': 50,
-    'secondary': 50,
-    'secondary_link': 50,
-    'tertiary': 50,
-    'tertiary_link': 50,
-    'unclassified': 30,
-    'residential': 30,
-    'living_street': 5
-}
-
-rotterdam_graph = ox.graph_from_place("Rotterdam", custom_filter = cf, buffer_dist=2000, truncate_by_edge=True, simplify=False)
-hoogvliet_graph = ox.graph_from_place("Hoogvliet", custom_filter = cf, buffer_dist=3000, truncate_by_edge=True, simplify=False)
-schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist=1000, truncate_by_edge=True, simplify=False)
-
-G = nx.compose(rotterdam_graph, hoogvliet_graph)
-G = nx.compose(G, schiedam_graph)
-
-# Remove any edges that are not connected to the needed_types
-def remove_bad_connected_edges(
-    G, 
-    needed_types = ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link"]
-):
-    removed_nodes = []
-
-    for node in list(G.nodes):
-        in_edges = [d for u,v,d in G.in_edges(node, data = True) if d["highway"] in needed_types]
-        out_edges = [d for u,v,d in G.out_edges(node, data = True) if d["highway"] in needed_types]
-        if len(in_edges) == 0 or len(out_edges) == 0:
-            removed_nodes.append(node)
-
-    G.remove_nodes_from(removed_nodes)
-
-# ox.save_graph_geopackage(G, filepath="./data/Rotterdam_network_0.gpkg", directed = True)
-
-# remove_bad_connected_edges(G)
-
-# ox.save_graph_geopackage(G, filepath="./data/Rotterdam_network_1.gpkg", directed = True)
-
-G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
-G = ox.simplify_graph(G, allow_lanes_diff=False)
-    
-removed_nodes_list = []
-removed_nodes = True
-
-utils.log("Begin removing deadends...")
-
-while removed_nodes:
-    # Remove nodes which only have incoming or outgoing edges
-    dead_ends = [
-        node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0
-    ]
-
-    # Remove nodes with only one incoming and one outgoing edge, and these two edges originate from the same nodes (i.e., (u,v,k) == (v,u,k))
-    forbidden_u_turns = [
-        node for node in G.nodes() if (
-            len(G.in_edges(node)) == 1 
-            and len(G.out_edges(node)) == 1 
-            and list(G.in_edges(node, keys = True))[0][0] == list(G.out_edges(node, keys = True))[0][1] # u == v
-            and list(G.in_edges(node, keys = True))[0][1] == list(G.out_edges(node, keys = True))[0][0] # v == u
-            and list(G.in_edges(node, keys = True))[0][2] == list(G.out_edges(node, keys = True))[0][2] # keys should be equal
-        )
-    ]
-
-    sharp_turns = [
-        node for node in G.nodes() if (
-            len(G.in_edges(node)) == 1 
-            and len(G.out_edges(node)) == 1
-            and abs(ox.utils_geo.angle(G, list(G.in_edges(node, data = True))[0], list(G.out_edges(node, data = True))[0])) < 40
-        )
-    ]
-
-    nodes_to_remove = list(set(dead_ends + forbidden_u_turns + sharp_turns))
-
-    if len(nodes_to_remove) == 0:
-        removed_nodes = False
-
-    removed_nodes_list += nodes_to_remove
-    G.remove_nodes_from(nodes_to_remove)
-
-utils.log(f"Removed {len(removed_nodes_list)} deadends.")
-
-G = ox.simplify_graph(G, allow_lanes_diff=False)
-
-# ox.save_graph_geopackage(G, filepath="./data/Rotterdam_network_2.gpkg", directed = True)
-
-# travel time in seconds
-# length is in meters and speed is in km/h
-# thus to calculate the travel time in seconds, we need to convert the speed to m/s
-def travelTime(edge, max_speed):
+def travelTime(G, edge, max_speed):
     edge_data = G.get_edge_data(*edge)
     if isinstance(edge_data["length"], list):
         distance = 0
@@ -131,6 +28,8 @@ def turnPenalty(edge1, edge2):
 
 # calculate the travel time from the endpoint of the source_edge to the endpoint of the required_edges
 def dijkstra(G, source_edge, required_edges, max_speed = 100):
+    start = time.time()
+
     dist = dict.fromkeys(list(G.edges(keys=True)), float('inf'))
     dist[source_edge] = 0
 
@@ -154,71 +53,90 @@ def dijkstra(G, source_edge, required_edges, max_speed = 100):
 
         for out_edge in G.out_edges(in_edge, keys = True):
             turn_penalty = turnPenalty(in_edge, out_edge)
-            alt = travel_time + turn_penalty + travelTime(out_edge, max_speed)
+            alt = travel_time + turn_penalty + travelTime(G, out_edge, max_speed)
             if alt < dist[out_edge]:
                 dist[out_edge] = alt
                 prev[out_edge] = in_edge
                 fheappush(Q, (dist[out_edge], out_edge))
 
+    print(f"PPID {os.getppid()}->{os.getpid()} Completed in {round(time.time() - start,2)} seconds.")
+
     # return the distances corresponding to the targets and all prev where non None
     return {t: dist[t] for t in required_edges if t != source_edge}, {t: prev[t] for t in prev if (prev[t] is not None or t == source_edge)}
 
-def constructCoordinatePaths(G, from_edge : tuple, predecessors : dict, required_edges : list):
-    # predecessors: keys are edges and values are previous edges
-    paths_coordinates = {}
-    # construct the coordinate path from the end of edge to the end of the required edge
-    for required_edge in required_edges:
-        if required_edge == from_edge:
-            continue
-        path = []
-        edge = required_edge
-        while edge is not None and edge != from_edge:
-            prev_edge_data = G.get_edge_data(*edge)
-            if "geometry" in prev_edge_data:
-                coords = list(prev_edge_data["geometry"].coords)
-            else:
-                u = edge[0]
-                v = edge[1]
-                coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
-            path = coords[1:] + path
-            edge = predecessors[edge]
-        path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
-        paths_coordinates[required_edge] = path
-    return paths_coordinates
+if __name__ == '__main__':
+    # load df from parquet
+    df_edges = pd.read_parquet("./data/Rotterdam_edges.parquet")
+    df_nodes = pd.read_parquet("./data/Rotterdam_nodes.parquet")
 
-required_edges = [
-    (edge[0], edge[1], edge[2]) 
-    for edge in G.edges(data=True, keys = True) 
-    if edge[3]["highway"] in ["primary", "primary_link", "secondary", "secondary_link"]
-]
+    # convert df to gdf
+    gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry = gpd.points_from_xy(df_nodes.x, df_nodes.y))
+    edge_geometry = df_edges["geometry"].apply(lambda x: LineString(x.tolist()))
+    gdf_edges = gpd.GeoDataFrame(df_edges, geometry = edge_geometry)
 
-distance_df = pd.DataFrame(index = required_edges, columns = required_edges)
-path_df = pd.DataFrame(index = required_edges, columns = required_edges)
+    for col in gdf_edges.columns:
+        if not gdf_edges[col].apply(lambda x: not isinstance(x, np.ndarray)).all():
+            gdf_edges[col] = [value if not isinstance(value, np.ndarray) else value.tolist() for value in gdf_edges[col]]
 
-utils.log("Start calculating distances")
+    G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
 
+    # save graph for comparison purposes
+    #ox.save_graph_geopackage(G, filepath="./data/Rotterdam_network_test.gpkg", directed = True)
 
+    # def constructCoordinatePaths(G, from_edge : tuple, predecessors : dict, required_edges : list):
+    #     # predecessors: keys are edges and values are previous edges
+    #     paths_coordinates = {}
+    #     # construct the coordinate path from the end of edge to the end of the required edge
+    #     for required_edge in required_edges:
+    #         if required_edge == from_edge:
+    #             continue
+    #         path = []
+    #         edge = required_edge
+    #         while edge is not None and edge != from_edge:
+    #             prev_edge_data = G.get_edge_data(*edge)
+    #             if "geometry" in prev_edge_data:
+    #                 coords = list(prev_edge_data["geometry"].coords)
+    #             else:
+    #                 u = edge[0]
+    #                 v = edge[1]
+    #                 coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
+    #             path = coords[1:] + path
+    #             edge = predecessors[edge]
+    #         path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
+    #         paths_coordinates[required_edge] = path
+    #     return paths_coordinates
 
+    required_edges = [
+        (edge[0], edge[1], edge[2]) 
+        for edge in G.edges(data=True, keys = True) 
+        if set(edge[3]["highway"]).isdisjoint({"primary", "primary_link", "secondary", "secondary_link"})
+    ]
+    required_edges = required_edges[0:1000]
 
-count = 0
-for edge in required_edges:
-    count += 1
-    utils.log(f"{count} / {len(required_edges)}")
-    travel_times, predecessors = dijkstra(G, edge, required_edges, max_speed = 100)
+    distance_df = pd.DataFrame(index = required_edges, columns = required_edges)
+    path_df = pd.DataFrame(index = required_edges, columns = required_edges)
 
-    mask = (distance_df.index == edge)
-    distance_df.loc[mask, travel_times.keys()] = list(travel_times.values())
+    print("Start calculating distances")
 
-    paths = constructCoordinatePaths(G, edge, predecessors, required_edges)
+    MAX_SPEED = 100
 
-    # path_df.loc[mask, paths.keys()] = list(paths.values())
+    start = time.time()
+    args = [(G, edge, required_edges, MAX_SPEED) for edge in required_edges]
+    with mp.Pool(processes=mp.cpu_count()) as pool:  
+        results = pool.starmap(dijkstra, args)
+    end = time.time()
+    print("-------------------------------------------")
+    print(f"With workers completed in {round(end-start,2)}")
 
+    count = 0
+    start = time.time()
+    for edge in required_edges:
+        count += 1
+        # print(count)
+        travel_times, predecessors = dijkstra(G, edge, required_edges, MAX_SPEED)
 
-# distance_df.to_pickle('./data/distance_df.pkl')
-# path_df.to_pickle('./data/path_df.pkl')
-
-# import geopandas as gpd
-# gdf3 = gpd.GeoDataFrame(geometry=list(linestrings.values()), crs = 'epsg:4326')  # Note GeoDataFrame geometry requires a list
-# gdf3.to_file(filename='./data/nodes.shp', driver='ESRI Shapefile')
-
-# print("stop")
+        # mask = (distance_df.index == edge)
+        # distance_df.loc[mask, travel_times.keys()] = list(travel_times.values())
+    end = time.time()
+    print("-------------------------------------------")
+    print(f"Without workers completed in {round(end-start,2)}")
