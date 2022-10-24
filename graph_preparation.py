@@ -75,6 +75,7 @@ while removed_nodes:
         node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0
     ]
 
+    # TODO CHECK IF THESE EDGES ARE THE SAME LENGTH?
     # Remove nodes with only one incoming and one outgoing edge, and these two edges originate from the same nodes (i.e., (u,v,k) == (v,u,k))
     forbidden_u_turns = [
         node for node in G.nodes() if (
@@ -88,11 +89,17 @@ while removed_nodes:
 
     sharp_turns = [
         node for node in G.nodes() if (
-            len(G.in_edges(node)) == 1 
-            and len(G.out_edges(node)) == 1
-            and abs(ox.utils_geo.angle(G, list(G.in_edges(node, data = True))[0], list(G.out_edges(node, data = True))[0])) < 40
+            len(G.out_edges(node)) == 1
+            and all([abs(ox.utils_geo.angle(G, in_edge, list(G.out_edges(node, data = True))[0])) < 40 for in_edge in list(G.in_edges(node, data = True))])
         )
     ]
+    
+    sharp_turns += ([
+        node for node in G.nodes() if (
+            len(G.in_edges(node)) == 1
+            and all(abs(ox.utils_geo.angle(G, list(G.in_edges(node, data = True))[0], out_edge)) < 40 for out_edge in list(G.out_edges(node, data = True)))
+        )
+    ])
 
     nodes_to_remove = list(set(dead_ends + forbidden_u_turns + sharp_turns))
 

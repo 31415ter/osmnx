@@ -484,8 +484,8 @@ def bbox_to_poly(north, south, east, west):
 
 
 # For the life of me, couldnt figure out how to calculate the angle between two lines that correspond to the values obtained in QGIS.
-# So I just used the law of cosines and later figured out whether the angle was positive or negative by applying the cross product.
-# This could problably be done in a much more elegant way, but it works.
+# So I just used the law of cosines and figured out whether the angle was positive or negative by applying the cross product.
+# This could problably be done in a much more elegant way, but hey: it works.
 def angle(G, in_edge, out_edge):
     """
     Calculate the angle between two edges in a graph.
@@ -504,8 +504,10 @@ def angle(G, in_edge, out_edge):
         the angle between the two edges in degrees (-180 to 180)
     """
 
-    in_edge_data = in_edge[2]
-    out_edge_data = out_edge[2]
+    
+
+    in_edge_data = in_edge[len(in_edge)-1]
+    out_edge_data = out_edge[len(out_edge)-1]
 
     # check if the in_edge has a geometry attribute, 
     # if the edge contains the geometry attribute, select the second last coordinates of the geometry
