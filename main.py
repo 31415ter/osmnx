@@ -23,6 +23,7 @@ useful_tags_way = [
     "lanes:forward",
     "lanes:backward"
 ]
+
 ox.config(log_file=True, log_console=True, use_cache=True, useful_tags_way=useful_tags_way)
 
 # G = ox.graph_from_place("Amsterdam", network_type="drive", simplify=False)

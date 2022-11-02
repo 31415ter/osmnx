@@ -57,18 +57,18 @@ def setTurnPenalties(G, gamma = 3):
     for node in G.nodes:
         straights = []
         outgoing_straights = {}
-        incoming_straights = {}
         turns = []
 
+        if node == 735629288:
+            print()
         # for each incoming road (edge) at the intersection (node), determine which outgoing road is the 'straight' road (edge)
         for incoming_edge in list(G.in_edges(node, data = True, keys = True)):
             straight = None
-            in_node = incoming_edge[0]
             incoming_road_type = highwayType(incoming_edge)
 
             for outgoing_edge in list(G.out_edges(node, data = True, keys = True)):
-                out_node = outgoing_edge[1]
-                if in_node == out_node:
+                if (incoming_edge[0] == outgoing_edge[1]) and (incoming_edge[2] == outgoing_edge[2]):
+                    G.turn_penalties[(incoming_edge[0], incoming_edge[2], incoming_edge[1], outgoing_edge[1], outgoing_edge[2])] = float('inf')
                     continue # cannot perform u-turns todo, is this correct? are edge lenghts the same?
                 angle = ox.utils_geo.angle(G, incoming_edge, outgoing_edge) # calculate angle between the two edges
                 if angle < 0: angle = 360 + angle
@@ -160,29 +160,31 @@ def setTurnPenalties(G, gamma = 3):
                 if best == None: continue
                 straights.append(best)
 
+        in_edge_straight_turns = {}
         # map all incoming streets (edges) of the intersection (node) to the straights, such that ?? TODO
         for road_turn in straights:
-            incoming_straights[(road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2])] = road_turn
+            in_edge_straight_turns[(road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2])] = road_turn
 
         for road_turn in turns:
             if "junction" in road_turn.in_edge[3].keys() and bool({"circular", "roundabout"} & {road_turn.in_edge[3]["junction"]}):
-                # turn is onto a roundabout, thus no penalty is applied
+                # turn is onto a roundabout, no penalty is applied
                 road_turn.penalty = 0
-            elif road_turn.in_edge[0] == road_turn.out_edge[1]:
+            elif (road_turn.in_edge[0] == road_turn.out_edge[1]) and (road_turn.in_edge[2] == road_turn.out_edge[2]):
                 # turn is a u-turn, which is prohibited
                 road_turn.penalty = float('inf')
-            elif (abs(road_turn.angle) < 45 or abs(road_turn.angle) > 315) and (True in road_turn.in_edge[3]['oneway'] and True in road_turn.out_edge[3]['oneway']):
-                # turn is very tight, which is prohibited
-                road_turn.penalty = float('inf')
+            # elif (abs(road_turn.angle) < 45 or abs(road_turn.angle) > 315) and (True in road_turn.in_edge[3]['oneway'] and True in road_turn.out_edge[3]['oneway']):
+            #     # turn is very tight, which is prohibited
+            #     road_turn.penalty = float('inf')
             elif (abs(road_turn.angle) < 45 or abs(road_turn.angle) > 315):
+                # turn angle is too tight
                 road_turn.penalty = float('inf')
             elif road_turn in straights:
+                # turn is a straight
                 road_turn.penalty = 0
-                # TODO
-            elif (road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2]) in incoming_straights:
+            elif (road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2]) in in_edge_straight_turns:
                 # if a straight turn was previously identified for the incoming road (edge) of the road_turn
                 # then the penalty is the difference between the angle of the turn and the angle of the straight
-                if road_turn.angle >= incoming_straights[(road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2])].angle:
+                if road_turn.angle >= in_edge_straight_turns[(road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2])].angle:
                     road_turn.penalty = 1 * gamma
                 else:
                     road_turn.penalty = 5 * gamma
@@ -195,7 +197,8 @@ def setTurnPenalties(G, gamma = 3):
             G.turn_penalties[(road_turn.in_edge[0], road_turn.in_edge[2], road_turn.in_edge[1], road_turn.out_edge[1], road_turn.out_edge[2])] = road_turn.penalty
 
     end = time.time()
-    print(f"Turn penalties calculated in {end - start} seconds")
+    print(f"Turn penalties calculated in {round(end - start, 1)} seconds")
+    print()
 
 # calculate the travel time from the endpoint of the source_edge to the endpoint of the required_edges
 def dijkstra(G, source_edge, required_edges, max_speed = 100):
@@ -222,8 +225,8 @@ def dijkstra(G, source_edge, required_edges, max_speed = 100):
         if len(unvisited) == 0:
             break
 
-        for out_edge in G.out_edges(in_edge, keys = True):
-            turn_penalty = getTurnPenalty(in_edge, out_edge)
+        for out_edge in G.out_edges(in_edge[1], keys = True):
+            turn_penalty = 0#G.turn_penalties[(in_edge[0], in_edge[2], in_edge[1], out_edge[1], out_edge[2])]
             alt = travel_time + turn_penalty + travelTime(G, out_edge, max_speed)
             if alt < dist[out_edge]:
                 dist[out_edge] = alt
@@ -256,43 +259,19 @@ if __name__ == '__main__':
     # TODO: determine inverse edge mapping?
 
     # save graph for comparison purposes
-    #ox.save_graph_geopackage(G, filepath="./data/Rotterdam_network_test.gpkg", directed = True)
-
+    #ox.save_graph_geopackage(G, filepath="./data/Rotterdam_network.gpkg", directed = True)
 
     setTurnPenalties(G, gamma = 3)
-
-    # def constructCoordinatePaths(G, from_edge : tuple, predecessors : dict, required_edges : list):
-    #     # predecessors: keys are edges and values are previous edges
-    #     paths_coordinates = {}
-    #     # construct the coordinate path from the end of edge to the end of the required edge
-    #     for required_edge in required_edges:
-    #         if required_edge == from_edge:
-    #             continue
-    #         path = []
-    #         edge = required_edge
-    #         while edge is not None and edge != from_edge:
-    #             prev_edge_data = G.get_edge_data(*edge)
-    #             if "geometry" in prev_edge_data:
-    #                 coords = list(prev_edge_data["geometry"].coords)
-    #             else:
-    #                 u = edge[0]
-    #                 v = edge[1]
-    #                 coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
-    #             path = coords[1:] + path
-    #             edge = predecessors[edge]
-    #         path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
-    #         paths_coordinates[required_edge] = path
-    #     return paths_coordinates
 
     # selected required edges
     required_edges = [
         (edge[0], edge[1], edge[2]) 
         for edge in G.edges(data=True, keys = True) 
-        if set(edge[3]["highway"]).isdisjoint({"primary", "primary_link", "secondary", "secondary_link"})
+        if bool(set(edge[3]["highway"]) & {"primary", "primary_link", "secondary", "secondary_link"})
     ]
 
     # process distances in batches to ease memory usage
-    edge_count = 250
+    edge_count = 1
 
     distance_df_workers = pd.DataFrame(index = required_edges[0:edge_count], columns = required_edges)
     path_df_workers = pd.DataFrame(index = required_edges[0:edge_count], columns = required_edges)
@@ -319,17 +298,38 @@ if __name__ == '__main__':
     distance_df_workers.columns = [str(i) for i in range(len(required_edges))]
     distance_df_workers.to_parquet(f"./data/Rotterdam_distance_{0}_{edge_count}.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    # count = 0
-    # start = time.time()
-    # for edge in required_edges:
-    #     count += 1
-    #     # print(count)
-    #     travel_times, predecessors = dijkstra(G, edge, required_edges, MAX_SPEED)
+    def constructCoordinatePaths(G, from_edge : tuple, predecessors : dict, required_edges : list):
+        # predecessors: keys are edges and values are previous edges
+        paths_coordinates = {}
+        # construct the coordinate path from the end of edge to the end of the required edge
+        for required_edge in required_edges:
+            # if required_edge == from_edge:
+            #     continue
+            path = []
+            edge = required_edge
+            while edge is not None and edge != from_edge:
+                prev_edge_data = G.get_edge_data(*edge)
+                if "geometry" in prev_edge_data:
+                    coords = list(prev_edge_data["geometry"].coords)
+                else:
+                    u = edge[0]
+                    v = edge[1]
+                    coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
+                path = coords[1:] + path
+                print(G.turn_penalties[(predecessors[edge][0], predecessors[edge][2], predecessors[edge][1], edge[1], edge[2])])
+                print(f"{edge} - {predecessors[edge]}")
+                edge = predecessors[edge]
+            path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
+            paths_coordinates[required_edge] = path
+        return paths_coordinates
 
-    #     mask = (distance_df_non_workers.index == edge)
-    #     distance_df_non_workers.loc[mask, travel_times.keys()] = list(travel_times.values())
-    # end = time.time()
-    # print("-------------------------------------------")
-    # print(f"Without workers completed in {round(end-start,2)}")
+    # for edge in required_edges[0:edge_count]:
+    #     mask = (distance_df_workers.index == required_edges[i])
+    #     path_df_workers.loc[mask, :] = constructCoordinatePaths(G, edge, results[required_edges.index(edge)][1], required_edges)
 
-    # print("Start calculating paths")
+    # path_df_workers
+
+    pd.DataFrame(
+        constructCoordinatePaths(G, required_edges[0:edge_count][0], results[required_edges.index(required_edges[0:edge_count][0])][1], [(44088701, 4247298055, 0)])[(44088701, 4247298055, 0)], columns = ["x", "y"]
+        ).to_csv("./data/paths/test.csv", sep=',')
+    path_df_workers

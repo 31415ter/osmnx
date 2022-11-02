@@ -133,9 +133,9 @@ def _different_lanes(G, node):
             lanes.add(1)
 
         if "lanes:forward" in edge:
-            lanes_forward.add(edge["lanes:forward"])
+            [lanes_forward.add(lane) for lane in edge["lanes:forward"]]
         if "lanes:backward" in edge:
-            lanes_backward.add(edge["lanes:backward"])
+            [lanes_backward.add(lane) for lane in edge["lanes:backward"]]
 
     # if the number of lanes of the in and out edges are different, 
     # the edges connected to the considered node differ in the number of lanes

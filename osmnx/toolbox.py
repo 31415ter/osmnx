@@ -13,7 +13,7 @@ import networkx as nx
 import rtree
 import itertools
 
-from shapely.geometry import MultiPoint, LineString
+from shapely.geometry import MultiPoint, LineString, Point
 from shapely.ops import snap, split
 
 pd.options.mode.chained_assignment = None
@@ -166,7 +166,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
             new_nodes = gpd.GeoDataFrame(new_points, columns=['geometry'], crs=f'epsg:{meter_epsg}')
             n = len(new_nodes)
             new_nodes['highway'] = node_highway_pp
-            new_nodes['osmid'] = [int(osmid_prefix + i) for i in range(n)]
+            new_nodes['osmid'] = [int(max(nodes['osmid']) + i + 1) for i in range(n)]
             for tag in dict_tags:
                 if tag not in pois_meter.columns:
                     continue 
@@ -219,6 +219,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
             new_edges = gpd.GeoDataFrame(pois[[key_col]], geometry=new_lines, columns=[key_col, 'geometry'])
             new_edges['oneway'] = False
             new_edges['highway'] = edge_highway
+            new_edges['k'] = 0
 
         # update features (a bit slow)
         # new_edges['length'] = [l.length for l in new_lines]
@@ -226,7 +227,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
             lambda x: nodes_id_dict.get(list(x.coords)[0], None))
         new_edges['to'] = new_edges['geometry'].map(
             lambda x: nodes_id_dict.get(list(x.coords)[-1], None))
-        new_edges['osmid'] = ['_'.join(list(map(str, s))) for s in zip(new_edges['from'], new_edges['to'])]
+        new_edges['osmid'] = [', '.join(list(map(str, s))) for s in zip(new_edges['from'], new_edges['to'])]
 
         x = [coord.xy[0] for coord in new_edges['geometry']]
         y = [coord.xy[1] for coord in new_edges['geometry']]
@@ -281,6 +282,11 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
     nodes_meter = nodes.to_crs(epsg=meter_epsg)
     edges_meter = edges.to_crs(epsg=meter_epsg)
 
+    # add key_col to nodes
+    if key_col not in pois_meter:
+        pois[key_col] = [int(osmid_prefix + i) for i in range(len(pois))]
+        pois_meter[key_col] = [int(osmid_prefix + i) for i in range(len(pois_meter))]
+
     # build rtree
     print("Building rtree...")
     Rtree = rtree.index.Index()
@@ -308,7 +314,7 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
     print("Updating internal nodes...")
     nodes_meter, _ = update_nodes(nodes_meter, list(pois_meter['pp']), ptype='pp', meter_epsg=meter_epsg)
     nodes_coord = nodes_meter['geometry'].map(lambda x: x.coords[0])
-    nodes_id_dict = dict(zip(nodes_coord, nodes_meter['osmid'].astype('Int64')))
+    nodes_id_dict = dict(zip(nodes_coord, nodes_meter['osmid'])) # .astype('Int64')
 
     # 1-3: update internal edges (split line segments)
     print("Updating internal edges...")
@@ -371,20 +377,22 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
         from shapely.geometry import LineString
         oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
         for u,v,data in list(G.edges(data=True)):
-            if "oneway" in data and data["oneway"] not in oneway_values:
-                new_data = data.copy()
-                new_data["reversed"] = True
-                new_data["geometry"] = LineString(list(new_data["geometry"].coords)[::-1])
-                if "key" in new_data:
-                    new_data.pop("key")
+            # check if the data contains a "oneway" indicator
+            if "oneway" in data and (bool(set(list(data["oneway"])) & oneway_values) if isinstance(data["oneway"], list) else data["oneway"] in oneway_values): 
+                continue
+            new_data = data.copy()
+            #new_data["reversed"] = True
+            new_data["geometry"] = LineString(list(new_data["geometry"].coords)[::-1])
+            if "key" in new_data:
+                new_data.pop("key")
 
-                # check if edge v,u exists in G
-                key_list = list(G[u][v])
-                if G.has_edge(v, u):
-                    key_list += list(G[v][u])
-                new_key = max(key_list) + 1
+            # check if edge v,u exists in G
+            key_list = list(G[u][v])
+            if G.has_edge(v, u):
+                key_list += list(G[v][u])
+            new_key = max(key_list) + 1
 
-                G.add_edge(v,u, key = new_key, **new_data)
+            G.add_edge(v,u, key = new_key, **new_data)
 
     # create graph based on edges gdf
     V = nx.from_pandas_edgelist(df = edges, source = 'from', target = 'to', edge_attr = True, create_using = nx.MultiDiGraph(), edge_key = 'k')
@@ -401,7 +409,7 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
 
     return V
 
-def graph_with_pois_inserted(G, city, tags, key_col='osmid', projected_footways=False, node_pois=False, dict_tags = {'amenity', 'name'}):
+def graph_with_pois_inserted(G, city, tags, key_col='osmid', projected_footways=False, node_pois=False, dict_tags = {'name'}):
     pois, nodes, edges = initialize_pois(G, city, tags)
 
     new_nodes, new_edges = connect_poi(pois, 
@@ -411,6 +419,49 @@ def graph_with_pois_inserted(G, city, tags, key_col='osmid', projected_footways=
         projected_footways=projected_footways, 
         node_pois=node_pois, 
         dict_tags=dict_tags
+    )
+
+    return graph_from_gpd(new_edges, new_nodes)
+
+def graph_inserted_pois(G, pois, projected_ways = True, node_pois = True):
+
+    # retrieve nodes and undirected edges from graph
+    # undirected edges are retrieved, becase we only identify the nearest edge to a POI
+    # and in a later step the missing reverse edges are added
+    nodes, edges = ox.utils_graph.graph_to_gdfs(ox.utils_graph.get_undirected(G))
+
+    if not nodes.crs or not edges.crs:
+        nodes = nodes.set_crs("epsg:4326")
+        edges = edges.set_crs("epsg:4326")
+
+    # set u,v,k columns to the edges gdf
+    u = [u for u,v,k in list(edges.index)]
+    v = [v for u,v,k in list(edges.index)]
+    k = [k for u,v,k in list(edges.index)]
+    edges.index = range(0, len(edges))
+    edges['u'] = u
+    edges['v'] = v
+    edges['k'] = k
+
+    # set nodes index to unique values, while saving the osmids
+    nodes['osmid'] = nodes.index
+    nodes.index = range(0, len(nodes))
+
+    # retrieve pois from osm
+    pois = gpd.GeoDataFrame(pois)
+    pois['geometry'] = [Point(point[0], point[1]) for point in pois[['lon', 'lat']].values]
+    pois = pois.set_crs("epsg:4326")
+
+    # set a primary key column, the pois must have a unique id
+    pois['key'] = pois.index 
+
+    new_nodes, new_edges = connect_poi(pois, 
+        nodes, 
+        edges, 
+        key_col='osmid', 
+        projected_footways=projected_ways, 
+        node_pois=node_pois,
+        dict_tags={'name', 'amenity'}
     )
 
     return graph_from_gpd(new_edges, new_nodes)
