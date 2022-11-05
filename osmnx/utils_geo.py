@@ -538,8 +538,12 @@ def angle(G, in_edge, out_edge):
     c = distance.great_circle_vec(mid_lat, mid_lng, end_lat, end_lng)
     a = distance.great_circle_vec(start_lat, start_lng, end_lat, end_lng)
 
+    value = (b**2 + c**2 - a**2) / (2 * b * c)
+    value = max(min(value, 1.0), -1.0) # to avoid rounding errors
+    # clamp values?
+
     # calculate angle using law of cosines
-    angle = np.arccos((b**2 + c**2 - a**2) / (2 * b * c))
+    angle = np.arccos(value)
 
     # determine whether (end_lat, end_lng) is on the left or right side of the line between (start_lat, start_lng) and (mid_lat, mid_lng)
     # if the point is on the left side, the angle is negative
