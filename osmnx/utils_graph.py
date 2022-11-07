@@ -512,3 +512,30 @@ def _update_edge_keys(G):
         G.remove_edge(u, v, key=k)
 
     return G
+
+# set lane count of the edge using the assumptions when lanes are not specified,
+# see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
+# a roundabout is assumed to have 1 lane, if not specified otherwise
+def _lane_count(edge):
+    lane_count = None
+    if "lanes" in edge: 
+        lane_count = int(edge["lanes"])
+    elif edge["oneway"] in {"yes", True, 1, "true", "1"}:
+        lane_count = 1
+    elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
+        lane_count = 2
+    else:
+        lane_count = 1
+
+    reversed = edge['reversed']
+    if ("lanes:backward" in edge or "lanes:forward" in edge):
+        if reversed and "lanes:backward" in edge:
+            lane_count = int(edge["lanes:backward"])
+        elif reversed:
+            lane_count = lane_count - int(edge["lanes:forward"])
+        elif not reversed and "lanes:forward" in edge:
+            lane_count = int(edge["lanes:forward"])
+        else:
+            lane_count = lane_count - int(edge["lanes:backward"])     
+
+    return lane_count

@@ -3,11 +3,13 @@ import time
 import numpy as np
 import multiprocessing as mp
 import osmnx as ox
+import networkx as nx
 import pandas as pd
 import geopandas as gpd
 
 from fibheap import *
 from shapely.geometry import LineString
+from osmnx.utils_graph import _lane_count
 
 class turn:
     turn_penalty = 0
@@ -190,8 +192,6 @@ def setTurnPenalties(G, gamma = 3, minimum_turn_angle = 45):
                     road_turn.penalty = 5 * gamma
 
             # add the turns to the graph
-
-
             # save edges with keys as: (start_osmid, start_key, mid_osmid, end_osmid, end_key)
             G.turn_penalties[(road_turn.in_edge[0], road_turn.in_edge[2], road_turn.in_edge[1], road_turn.out_edge[1], road_turn.out_edge[2])] = road_turn.penalty
 
@@ -275,6 +275,21 @@ if __name__ == '__main__':
         if bool(set(edge[3]["highway"]) & {"primary", "primary_link", "secondary", "secondary_link", "projected_footway"})
     ]
 
+    required_edges_data = [
+        edge[3]
+        for edge in G.edges(data=True, keys = True)
+        if bool(set(edge[3]["highway"]) & {"primary", "primary_link", "secondary", "secondary_link", "projected_footway"})
+    ]
+
+    # convert required_edges_data to a dataframe
+    # save the dataframe to a parquet file
+    df_required_edges = pd.DataFrame(
+        required_edges_data, 
+        index = required_edges, 
+        columns = ['lanes', 'length', 'lanes:forward', 'lanes:backward', 'turn:lanes', 'speed_kph', 'oneway']
+    )
+    df_required_edges.to_parquet(f"./data/Rotterdam_edges.parquet.gzip", engine='pyarrow', compression='GZIP')
+
     # process distances in batches to ease memory usage
     edge_count = len(required_edges)
 
@@ -303,6 +318,7 @@ if __name__ == '__main__':
     path_df_workers.columns = [str(i) for i in range(len(required_edges))]
     path_df_workers.to_parquet(f"./data/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
 
+    # save the depots nodes to a df
     df_depots = pd.DataFrame(df_nodes[df_nodes['highway'] == 'poi'].index.values, columns = ["depots"])
     df_depots.to_parquet(f"./data/Rotterdam_depots.parquet.gzip", engine='pyarrow', compression='GZIP')
 

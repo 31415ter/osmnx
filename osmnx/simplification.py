@@ -13,6 +13,7 @@ from . import stats
 from . import utils
 from . import utils_graph
 
+from osmnx.utils_graph import _lane_count
 
 def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
     """
@@ -112,6 +113,7 @@ def _different_lanes(G, node):
     -------
     bool
     """
+
     # get the in and out edges of the examined node
     in_edge = [d for u,v,d in G.in_edges(node, data=True)]
     out_edge = [d for u,v,d in G.out_edges(node, data=True)]
@@ -120,34 +122,15 @@ def _different_lanes(G, node):
     # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
     # a roundabout is assumed to have 1 lane, if not specified otherwise
     lanes = set()
-    lanes_forward = set()
-    lanes_backward = set()
     for edge in in_edge + out_edge:
-        if "lanes" in edge: 
-            lanes.add(int(edge["lanes"]))
-        elif edge["oneway"] in {"yes", True, 1, "true", "1"}:
-            lanes.add(1)
-        elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
-            lanes.add(2)
-        else:
-            lanes.add(1)
-
-        if "lanes:forward" in edge:
-            [lanes_forward.add(lane) for lane in edge["lanes:forward"]]
-        if "lanes:backward" in edge:
-            [lanes_backward.add(lane) for lane in edge["lanes:backward"]]
+        lanes.add(edge["lanes"])
 
     # if the number of lanes of the in and out edges are different, 
     # the edges connected to the considered node differ in the number of lanes
     if len(lanes) > 1:
         return True
-    
-    # if the node has only incoming or outgoing edges 
-    # AND the number of forward lanes and backward lanes are different between the edges,
-    # this implies that a change occured in the division of lanes for each direction at the node.
-    elif (len(out_edge) == 2 or len(in_edge) == 2) and (lanes_forward != lanes_backward):
-        return True
-
+    # elif (len(out_edge) == 2 or len(in_edge) == 2):
+    #     return True
     else:
         return False
 

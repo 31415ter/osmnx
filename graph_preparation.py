@@ -9,6 +9,8 @@ from osmnx import utils
 from osmnx import toolbox 
 from fibheap import *
 
+from osmnx.utils_graph import _lane_count
+
 warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning) 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
@@ -59,33 +61,59 @@ hwy_speeds = {
     'living_street': 5
 }
 
-rotterdam_graph = ox.graph_from_place("Rotterdam", custom_filter = cf, buffer_dist=2000, truncate_by_edge=True, simplify=False)
-hoogvliet_graph = ox.graph_from_place("Hoogvliet", custom_filter = cf, buffer_dist=3000, truncate_by_edge=True, simplify=False)
-schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist=1000, truncate_by_edge=True, simplify=False)
+load_from_memory = True
 
-G = nx.compose(rotterdam_graph, hoogvliet_graph)
-G = nx.compose(G, schiedam_graph)
+if not load_from_memory:
+    rotterdam_graph = ox.graph_from_place("Rotterdam", custom_filter = cf, buffer_dist=2000, truncate_by_edge=True, simplify=False)
+    hoogvliet_graph = ox.graph_from_place("Hoogvliet", custom_filter = cf, buffer_dist=3000, truncate_by_edge=True, simplify=False)
+    schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist=1000, truncate_by_edge=True, simplify=False)
 
-# # Remove any edges that are not connected to the needed_types
-# def remove_bad_connected_edges(
-#     G, 
-#     needed_types = ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link"]
-# ):
-#     removed_nodes = []
-# 
-#     for node in list(G.nodes):
-#         in_edges = [d for u,v,d in G.in_edges(node, data = True) if d["highway"] in needed_types]
-#         out_edges = [d for u,v,d in G.out_edges(node, data = True) if d["highway"] in needed_types]
-#         if len(in_edges) == 0 or len(out_edges) == 0:
-#             removed_nodes.append(node)
-# 
-#     G.remove_nodes_from(removed_nodes)
-# 
-# remove_bad_connected_edges(G)
+    G = nx.compose(rotterdam_graph, hoogvliet_graph)
+    G = nx.compose(G, schiedam_graph)
+    G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
 
-G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
+    # set lanes of edges correctly.
+    lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
+    nx.set_edge_attributes(G, name="lanes", values=lane_count)
+
+    utils.log("Save graph to parquet")
+    gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
+    # for col in gdf_edges.columns:
+    #     if col == "geometry":
+    #         continue
+    #     # check if any of the values within the column col are not a list
+    #     # if not gdf_edges[col].apply(lambda x: not isinstance(x, list)).all():
+    #     #     gdf_edges[col] = [[value] if not isinstance(value, list) else value for value in gdf_edges[col]]
+
+    gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
+    gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
+
+    gdf_nodes.to_parquet("./data/Rotterdam_nodes.parquet", engine='pyarrow')
+    gdf_edges.to_parquet("./data/Rotterdam_edges.parquet", engine='pyarrow')
+
+if load_from_memory:
+    # load df from parquet
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    df_nodes = pd.read_parquet("./data/Rotterdam_nodes.parquet")
+    df_edges = pd.read_parquet("./data/Rotterdam_edges.parquet")
+
+    # convert df to gdf
+    gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry = gpd.points_from_xy(df_nodes.x, df_nodes.y))
+    edge_geometry = df_edges["geometry"].apply(lambda x: LineString(x.tolist()))
+    gdf_edges = gpd.GeoDataFrame(df_edges, geometry = edge_geometry)
+
+    # convert np.arrays to lists when applicable
+    for col in gdf_edges.columns:
+        if not gdf_edges[col].apply(lambda x: not isinstance(x, np.ndarray)).all():
+            gdf_edges[col] = [value if not isinstance(value, np.ndarray) else value.tolist() for value in gdf_edges[col]]
+
+    # create graph from gdf
+    G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
+
 G = ox.simplify_graph(G, allow_lanes_diff=False)
-    
+
 removed_nodes_list = []
 removed_nodes = True
 
@@ -134,42 +162,6 @@ while removed_nodes:
 utils.log(f"Removed {len(removed_nodes_list)} deadends.")
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
-
-# utils.log("Save graph to parquet")
-
-# gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
-# for col in gdf_edges.columns:
-#     if col == "geometry":
-#         continue
-#     # check if any of the values within the column col are not a list
-#     if not gdf_edges[col].apply(lambda x: not isinstance(x, list)).all():
-#         gdf_edges[col] = [[value] if not isinstance(value, list) else value for value in gdf_edges[col]]
-
-# gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
-# gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
-
-# gdf_nodes.to_parquet("./data/Rotterdam_nodes.parquet", engine='pyarrow')
-# gdf_edges.to_parquet("./data/Rotterdam_edges.parquet", engine='pyarrow')
-
-# import geopandas as gpd
-# from shapely.geometry import LineString
-
-# # load df from parquet
-# df_edges = pd.read_parquet("./data/Rotterdam_test_edges.parquet")
-# df_nodes = pd.read_parquet("./data/Rotterdam_test_nodes.parquet")
-
-# # convert df to gdf
-# gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry = gpd.points_from_xy(df_nodes.x, df_nodes.y))
-# edge_geometry = df_edges["geometry"].apply(lambda x: LineString(x.tolist()))
-# gdf_edges = gpd.GeoDataFrame(df_edges, geometry = edge_geometry)
-
-# # convert np.arrays to lists when applicable
-# for col in gdf_edges.columns:
-#     if not gdf_edges[col].apply(lambda x: not isinstance(x, np.ndarray)).all():
-#         gdf_edges[col] = [value if not isinstance(value, np.ndarray) else value.tolist() for value in gdf_edges[col]]
-
-# # create graph from gdf
-# G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
 
 # insert depots into graph
 depots = {"name" : ["Giesenweg", "Laagjes"] , "lon" : [4.4279192,4.5230457], "lat" : [51.9263550,51.8837905], "amenity" : ["depot", "depot"]}

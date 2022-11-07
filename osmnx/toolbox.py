@@ -381,7 +381,7 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
             if "oneway" in data and (bool(set(list(data["oneway"])) & oneway_values) if isinstance(data["oneway"], list) else data["oneway"] in oneway_values): 
                 continue
             new_data = data.copy()
-            #new_data["reversed"] = True
+            new_data["reversed"] = not new_data["reversed"]
             new_data["geometry"] = LineString(list(new_data["geometry"].coords)[::-1])
             if "key" in new_data:
                 new_data.pop("key")
