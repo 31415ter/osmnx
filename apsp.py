@@ -52,7 +52,7 @@ def highwayType(edge):
     print(f"ERROR: highway type not found {highway_name}")
     return float('inf')
     
-def setTurnPenalties(G, gamma = 3, minimum_turn_angle = 45):
+def setTurnPenalties(G, gamma = 3, minimum_turn_angle = 40):
     G.turn_penalties = {}
 
     start = time.time()
@@ -67,7 +67,7 @@ def setTurnPenalties(G, gamma = 3, minimum_turn_angle = 45):
             incoming_road_type = highwayType(incoming_edge)
 
             for outgoing_edge in list(G.out_edges(node, data = True, keys = True)):
-                if (incoming_edge[0] == outgoing_edge[1]) and (incoming_edge[2] == outgoing_edge[2]):
+                if (incoming_edge[0] == outgoing_edge[1]) and (incoming_edge[2] == outgoing_edge[2]) and (outgoing_edge[3]['length'] == incoming_edge[3]['length']):
                     G.turn_penalties[(incoming_edge[0], incoming_edge[2], incoming_edge[1], outgoing_edge[1], outgoing_edge[2])] = float('inf')
                     continue # cannot perform u-turns todo, is this correct? are edge lenghts the same?
                 angle = ox.utils_geo.angle(G, incoming_edge, outgoing_edge) # calculate angle between the two edges
@@ -166,7 +166,7 @@ def setTurnPenalties(G, gamma = 3, minimum_turn_angle = 45):
             in_edge_straight_turns[(road_turn.in_edge[0], road_turn.in_edge[1], road_turn.in_edge[2])] = road_turn
 
         for road_turn in turns:
-            if "junction" in road_turn.in_edge[3].keys() and bool({"circular", "roundabout"} & {road_turn.in_edge[3]["junction"]}):
+            if "junction" in road_turn.in_edge[3].keys() and bool({"circular", "roundabout"} & {road_turn.in_edge[3]["junction"][0]}):
                 # turn is onto a roundabout, no penalty is applied
                 road_turn.penalty = 0
             elif (road_turn.in_edge[0] == road_turn.out_edge[1]) and (road_turn.in_edge[2] == road_turn.out_edge[2]):
@@ -225,7 +225,8 @@ def dijkstra(G, source_edge, required_edges, max_speed = 100):
 
         for out_edge in G.out_edges(in_edge[1], keys = True):
             turn_penalty = G.turn_penalties[(in_edge[0], in_edge[2], in_edge[1], out_edge[1], out_edge[2])]
-            alt = travel_time + turn_penalty + travelTime(G, out_edge, max_speed)
+            turn_penalty = 0
+            alt = travel_time + turn_penalty + (travelTime(G, in_edge, max_speed) if in_edge != source_edge else 0)
             if alt < dist[out_edge]:
                 dist[out_edge] = alt
                 prev[out_edge] = in_edge
@@ -235,7 +236,7 @@ def dijkstra(G, source_edge, required_edges, max_speed = 100):
 
     index = required_edges.index(source_edge)
     if index % 100 == 0 and index != 0:
-        print(f"Completed {index} of {len(required_edges)}")
+        print(f"Completed asps for {index} of {len(required_edges)}")
 
     # return the distances corresponding to the targets and all prev where non None
     return {t: dist[t] for t in required_edges}, {t: prev[t] for t in prev if (prev[t] is not None or t == source_edge)}
@@ -281,6 +282,19 @@ if __name__ == '__main__':
         if bool(set(edge[3]["highway"]) & {"primary", "primary_link", "secondary", "secondary_link", "projected_footway"})
     ]
 
+    # test if edges are reachable.
+    temp_distances = dijkstra(G, required_edges[0], required_edges)[0]
+    depot_nodes = df_nodes[df_nodes['highway'] == 'poi'].index.tolist()
+
+    for (key,value) in temp_distances.items():
+        if value == float('inf'):
+            if key[0] in depot_nodes or key[1] in depot_nodes:
+                continue
+            print(f"Removing edge {key} from required edges, as it is not reachable.")
+            index = required_edges.index(key)
+            del required_edges[index]
+            del required_edges_data[index]
+                
     # convert required_edges_data to a dataframe
     # save the dataframe to a parquet file
     df_required_edges = pd.DataFrame(
@@ -291,69 +305,75 @@ if __name__ == '__main__':
     df_required_edges.to_parquet(f"./data/Rotterdam_edges.parquet.gzip", engine='pyarrow', compression='GZIP')
 
     # process distances in batches to ease memory usage
-    edge_count = len(required_edges)
-
-    distance_df_workers = pd.DataFrame(index = required_edges[0:edge_count], columns = required_edges)
-    path_df_workers = pd.DataFrame(index = required_edges[0:edge_count], columns = required_edges)
+    edge_count = 25
+    required_edges = required_edges[0:edge_count]
+    
+    distance_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
+    path_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
 
     print("Start calculating distances")
 
     MAX_SPEED = 100
 
     start = time.time()
-    args = [(G, edge, required_edges, MAX_SPEED) for edge in required_edges[0:edge_count]]
-    with mp.Pool(processes=mp.cpu_count()) as pool:  
+    args = [(G, edge, required_edges, MAX_SPEED) for edge in required_edges]
+    with mp.Pool(processes=mp.cpu_count()) as pool:
         results = pool.starmap(dijkstra, args)
     end = time.time()
     print("-------------------------------------------")
     print(f"With workers completed in {round(end-start,2)}")
 
-    for i in range(len(required_edges[0:edge_count])):
+    for i in range(len(required_edges)):
+        if i % 100 == 0 and i != 0:
+            print(f"Completed {i} of {len(required_edges)}")
         mask = (distance_df_workers.index == required_edges[i])
         distance_df_workers.loc[mask, results[i][0].keys()] = list(results[i][0].values())
 
     distance_df_workers.columns = [str(i) for i in range(len(required_edges))]
     distance_df_workers.to_parquet(f"./data/Rotterdam_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    path_df_workers.columns = [str(i) for i in range(len(required_edges))]
-    path_df_workers.to_parquet(f"./data/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
-
     # save the depots nodes to a df
     df_depots = pd.DataFrame(df_nodes[df_nodes['highway'] == 'poi'].index.values, columns = ["depots"])
     df_depots.to_parquet(f"./data/Rotterdam_depots.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    # def constructCoordinatePaths(G, from_edge : tuple, predecessors : dict, required_edges : list):
-    #     # predecessors: keys are edges and values are previous edges
-    #     paths_coordinates = {}
-    #     # construct the coordinate path from the end of edge to the end of the required edge
-    #     for required_edge in required_edges:
-    #         # if required_edge == from_edge:
-    #         #     continue
-    #         path = []
-    #         edge = required_edge
-    #         while edge is not None and edge != from_edge:
-    #             prev_edge_data = G.get_edge_data(*edge)
-    #             if "geometry" in prev_edge_data:
-    #                 coords = list(prev_edge_data["geometry"].coords)
-    #             else:
-    #                 u = edge[0]
-    #                 v = edge[1]
-    #                 coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
-    #             path = coords[1:] + path
-    #             print(G.turn_penalties[(predecessors[edge][0], predecessors[edge][2], predecessors[edge][1], edge[1], edge[2])])
-    #             print(f"{edge} - {predecessors[edge]}")
-    #             edge = predecessors[edge]
-    #         path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
-    #         paths_coordinates[required_edge] = path
-    #     return paths_coordinates
+    def constructPaths(G, from_edge : tuple, predecessors : dict, required_edges : list, nodes = True):
+        # predecessors: keys are edges and values are previous edges
+        paths_coordinates = []
+        paths_nodes = []
+        # construct the coordinate path from the end of edge to the start of the required edge
+        for required_edge in required_edges:
+            path = []
+            nodes_path = []
+            edge = predecessors[required_edge]
+            while edge != from_edge:
+                prev_edge_data = G.get_edge_data(*edge)
+                if "geometry" in prev_edge_data:
+                    coords = list(prev_edge_data["geometry"].coords)
+                    coords = [coords[i] for i in range(len(coords)) if i == 0 or coords[i] != coords[i-1]]
+                else:
+                    u = edge[0]
+                    v = edge[1]
+                    coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
+                path = coords[1:] + path
+                nodes_path = [edge[1]] + nodes_path
+                edge = predecessors[edge]
+            path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
+            nodes_path = [from_edge[1]] + nodes_path
+            paths_coordinates.append(path)
+            paths_nodes.append(nodes_path)
+        return paths_coordinates if nodes == False else paths_nodes
 
-    # for edge in required_edges[0:edge_count]:
-    #     mask = (distance_df_workers.index == required_edges[i])
-    #     path_df_workers.loc[mask, :] = constructCoordinatePaths(G, edge, results[required_edges.index(edge)][1], required_edges)
+    for i in range(len(required_edges)):
+        if i % 100 == 0 and i != 0:
+            print(f"Completed {i} of {len(required_edges)}")
+        mask = (distance_df_workers.index == required_edges[i])
+        edge = required_edges[i]
+        prev_edges = results[required_edges.index(edge)][1]
+        path_df_workers.loc[mask, :] = constructPaths(G, edge, prev_edges, required_edges)
 
-    # path_df_workers
+    path_df_workers.columns = [str(i) for i in range(len(required_edges))]
+    path_df_workers.to_parquet(f"./data/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    # pd.DataFrame(
-    #     constructCoordinatePaths(G, required_edges[0:edge_count][0], results[required_edges.index(required_edges[0:edge_count][0])][1], [(44088701, 4247298055, 0)])[(44088701, 4247298055, 0)], columns = ["x", "y"]
-    #     ).to_csv("./data/paths/test.csv", sep=',')
-    # path_df_workers
+    # from plot_route import _plot_route
+    # route_map = _plot_route([5,23], G, path_df_workers, 12)
+    # route_map.save(outfile= "./data/solution.html")

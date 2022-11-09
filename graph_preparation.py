@@ -78,12 +78,6 @@ if not load_from_memory:
 
     utils.log("Save graph to parquet")
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
-    # for col in gdf_edges.columns:
-    #     if col == "geometry":
-    #         continue
-    #     # check if any of the values within the column col are not a list
-    #     # if not gdf_edges[col].apply(lambda x: not isinstance(x, list)).all():
-    #     #     gdf_edges[col] = [[value] if not isinstance(value, list) else value for value in gdf_edges[col]]
 
     gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
     gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
@@ -114,13 +108,19 @@ if load_from_memory:
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
 
+# insert depots into graph
+depots = {"name" : ["Giesenweg", "Laagjes"] , "lon" : [4.4279192,4.5230457], "lat" : [51.9263550,51.8837905], "amenity" : ["depot", "depot"]}
+G = toolbox.graph_inserted_pois(G, depots)
+
+gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
+depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
+
 removed_nodes_list = []
+removed_edges_list = []
 removed_nodes = True
-
 utils.log("Begin removing deadends...")
-
 while removed_nodes:
-    # Remove nodes which only have incoming or outgoing edges
+    # Remove nodes which only have 1 incoming or 1 outgoing edges
     dead_ends = [
         node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0
     ]
@@ -153,25 +153,51 @@ while removed_nodes:
 
     nodes_to_remove = list(set(dead_ends + forbidden_u_turns + sharp_turns))
 
-    if len(nodes_to_remove) == 0:
+    edges_to_remove = []
+    # scan for streets that have one incoming edge.
+    for edge in G.edges(keys = True, data = True):
+        if edge[0] in depot_nodes or edge[1] in depot_nodes:
+            continue
+
+        if len(G.out_edges(edge[1])) == 1:
+            out_edge = list(G.out_edges(edge[1], data = True))[0]
+            if out_edge[0] == edge[1] and out_edge[1] == edge[0]:
+                edges_to_remove += [edge]
+            elif abs(ox.utils_geo.angle(G, edge, out_edge)) < 40:
+                edges_to_remove += [edge]
+            
+        if len(G.in_edges(edge[0])) == 1:
+            in_edge = list(G.in_edges(edge[0], data = True))[0]
+            if in_edge[0] == edge[1] and in_edge[1] == edge[0]:
+                edges_to_remove += [edge]
+            elif abs(ox.utils_geo.angle(G, in_edge, edge)) < 40:
+                edges_to_remove += [edge]
+
+    for depot in depot_nodes:
+        if depot in nodes_to_remove:
+            nodes_to_remove.remove(depot)
+
+    if len(nodes_to_remove) == 0 and len(edges_to_remove) == 0:
         removed_nodes = False
 
     removed_nodes_list += nodes_to_remove
+    removed_edges_list += edges_to_remove
     G.remove_nodes_from(nodes_to_remove)
+    G.remove_edges_from(edges_to_remove)
 
-utils.log(f"Removed {len(removed_nodes_list)} deadends.")
+utils.log(f"Removed {len(removed_nodes_list) + len(removed_edges_list)} deadends.")
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
-
-# insert depots into graph
-depots = {"name" : ["Giesenweg", "Laagjes"] , "lon" : [4.4279192,4.5230457], "lat" : [51.9263550,51.8837905], "amenity" : ["depot", "depot"]}
-G = toolbox.graph_inserted_pois(G, depots)
 
 ox.save_graph_geopackage(G, filepath="./data/Rotterdam_bereik_network.gpkg", directed = True)
 
 utils.log("Saving graph to parquet...")
 
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
+
+gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
+gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
+
 for col in gdf_edges.columns:
     if col == "geometry":
         continue
@@ -179,10 +205,16 @@ for col in gdf_edges.columns:
     if not gdf_edges[col].apply(lambda x: not isinstance(x, list)).all():
         gdf_edges[col] = [[value] if not isinstance(value, list) else value for value in gdf_edges[col]]
         if col == "osmid":
-            gdf_edges[col] = [[int(id) for id in value[0].split(",")] if isinstance(value[0], str) else value for value in gdf_edges[col]]    
-
-gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
-gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
+            rows = []
+            for row in gdf_edges[col]:
+                new_row = []
+                for value in row:
+                    _value = value
+                    if isinstance(value, str):
+                        _value = [int(v) for v in value.split(",")]
+                    new_row += _value if isinstance(_value, list) else [value]
+                rows.append(new_row)
+            gdf_edges[col] = rows# [[int(id) for id in value[0].split(",")] if isinstance(value[0], str) else value for value in gdf_edges[col]]
 
 gdf_nodes.to_parquet("./data/Rotterdam_bereik_nodes.parquet", engine='pyarrow')
 gdf_edges.to_parquet("./data/Rotterdam_bereik_edges.parquet", engine='pyarrow')
