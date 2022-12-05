@@ -518,24 +518,47 @@ def _update_edge_keys(G):
 # a roundabout is assumed to have 1 lane, if not specified otherwise
 def _lane_count(edge):
     lane_count = None
-    if "lanes" in edge: 
-        lane_count = int(edge["lanes"])
-    elif edge["oneway"] in {"yes", True, 1, "true", "1"}:
-        lane_count = 1
+    if edge["lanes"] == edge["lanes"]:
+        # if edge is not oneway, lanes are divided equally between both directions
+        if edge["oneway"] not in {"yes", True, 1, "true", "1"}:
+            lane_count = int(int(edge["lanes"]) / 2)
+        else:
+            lane_count = int(edge["lanes"])
     elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
+        # number of lanes are not defined, so we use the lanes#assumptions
         lane_count = 2
     else:
         lane_count = 1
 
     reversed = edge['reversed']
-    if ("lanes:backward" in edge or "lanes:forward" in edge):
-        if reversed and "lanes:backward" in edge:
-            lane_count = int(edge["lanes:backward"])
+    lanes_backward = edge['lanes:backward']
+    lanes_forward = edge['lanes:forward']
+    if (lanes_backward == lanes_backward or lanes_forward == lanes_forward):
+        if reversed and lanes_backward == lanes_backward:
+            # edge is reversed and lanes backward is specified
+            lane_count = int(lanes_backward)
         elif reversed:
-            lane_count = lane_count - int(edge["lanes:forward"])
-        elif not reversed and "lanes:forward" in edge:
-            lane_count = int(edge["lanes:forward"])
+            # edge is reversed and lanes forward is specified (must be specified as lanes backward were not)
+            lane_count = int(edge["lanes"]) - int(lanes_forward)
+        elif not reversed and lanes_forward == lanes_forward:
+            # edge is not reversed and lanes forward is specified
+            lane_count = int(lanes_forward)
         else:
-            lane_count = lane_count - int(edge["lanes:backward"])     
+            # edge is not reversed and lanes backward is specified (must be specified as lanes forward were not)
+            lane_count = int(edge["lanes"]) - int(lanes_backward)     
 
     return lane_count
+
+# create udf with input of two series, and outputs series of binary and hex values
+def _get_bin_and_hex_id(x, y):
+    # convert to binary
+    x_bin = np.binary_repr(x, width=16)
+    y_bin = np.binary_repr(y, width=16)
+
+    # concatenate binary strings
+    bin_str = x_bin + y_bin
+
+    # convert to hex
+    hex_str = hex(int(bin_str, 2))
+
+    return pd.Series([bin_str, hex_str])

@@ -376,7 +376,7 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
     def add_reverse_edges(G):
         from shapely.geometry import LineString
         oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
-        for u,v,data in list(G.edges(data=True)):
+        for u, v, data in list(G.edges(data=True)):
             # check if the data contains a "oneway" indicator
             if "oneway" in data and (bool(set(list(data["oneway"])) & oneway_values) if isinstance(data["oneway"], list) else data["oneway"] in oneway_values): 
                 continue
@@ -438,6 +438,7 @@ def graph_inserted_pois(G, pois, projected_ways = True, node_pois = True):
     u = [u for u,v,k in list(edges.index)]
     v = [v for u,v,k in list(edges.index)]
     k = [k for u,v,k in list(edges.index)]
+    
     edges.index = range(0, len(edges))
     edges['u'] = u
     edges['v'] = v

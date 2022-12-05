@@ -114,25 +114,41 @@ def _different_lanes(G, node):
     bool
     """
 
-    # get the in and out edges of the examined node
-    in_edge = [d for u,v,d in G.in_edges(node, data=True)]
-    out_edge = [d for u,v,d in G.out_edges(node, data=True)]
+    if G.degree(node) == 2:
+        a = list(G.predecessors(node))[0]
+        b = list(G.successors(node))[0]
 
-    # retrieve all lane counts of the in and out edges using the assumptions when lanes are not specified,
-    # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
-    # a roundabout is assumed to have 1 lane, if not specified otherwise
-    lanes = set()
-    for edge in in_edge + out_edge:
-        lanes.add(edge["lanes"])
+        assert a != b, "predecessor and successor are the same, should not happen? Or only if node is self-looping?"
 
-    # if the number of lanes of the in and out edges are different, 
-    # the edges connected to the considered node differ in the number of lanes
-    if len(lanes) > 1:
-        return True
-    # elif (len(out_edge) == 2 or len(in_edge) == 2):
-    #     return True
-    else:
-        return False
+        lanes_from_edge = [int(d['lanes']) for (u,v,d) in G.in_edges(node, data= True) if u == a][0]
+        lanes_to_edge = [int(d['lanes']) for (u,v,d) in G.out_edges(node, data= True) if v == b][0]
+
+        return lanes_from_edge != lanes_to_edge        
+    else: # degree is 4
+            
+        # the node has 4 degree, and if the predecessors and succesor OSM IDs are different
+        # then the node must be an endpoint
+
+        # TODO THIS SHOULD BE REFACTORED TO CHECK IF THE UNION OF BOTH SETS EQUALS SIZE 2
+        if set(G.predecessors(node)) != set(G.successors(node)):
+            return True
+
+        a = list(G.predecessors(node))[0]
+        b = list(G.predecessors(node))[1]
+
+        assert a != b, "predecessor and successor are the same, should not happen? Or only if node is self-looping?"
+        assert set(G.predecessors(node)) == set(G.predecessors(node)), "predecessors and successors are not the same, should not happen?"
+
+        lanes_from_edge = [int(d['lanes']) for (u,v,d) in G.in_edges(node, data= True) if u == a][0]
+        lanes_to_edge = [int(d['lanes']) for (u,v,d) in G.out_edges(node, data= True) if v == b][0]
+
+        if (lanes_from_edge != lanes_to_edge):
+            return True
+
+        lanes_from_edge = [int(d['lanes']) for (u,v,d) in G.in_edges(node, data= True) if u == b][0]
+        lanes_to_edge = [int(d['lanes']) for (u,v,d) in G.out_edges(node, data= True) if v == a][0]
+
+        return lanes_from_edge != lanes_to_edge
 
 
 def _build_path(G, endpoint, endpoint_successor, endpoints):

@@ -302,11 +302,16 @@ if __name__ == '__main__':
         index = required_edges, 
         columns = ['lanes', 'length', 'lanes:forward', 'lanes:backward', 'turn:lanes', 'speed_kph', 'oneway']
     )
-    df_required_edges.to_parquet(f"./data/Rotterdam_edges.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    # process distances in batches to ease memory usage
-    edge_count = 25
-    required_edges = required_edges[0:edge_count]
+    locs = list(range(0,25)) + [3904] + [3903] + [573] + [3038]
+    required_edges = df_required_edges.index.values[locs].tolist()
+
+    df_required_edges = df_required_edges.iloc[locs]
+    df_required_edges.to_parquet(f"./data/asps_output/Rotterdam_edges.parquet.gzip", engine='pyarrow', compression='GZIP')
+
+    # # process distances in batches to ease memory usage
+    # edge_count = 25
+    # required_edges = required_edges[0:edge_count]
     
     distance_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
     path_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
@@ -330,11 +335,11 @@ if __name__ == '__main__':
         distance_df_workers.loc[mask, results[i][0].keys()] = list(results[i][0].values())
 
     distance_df_workers.columns = [str(i) for i in range(len(required_edges))]
-    distance_df_workers.to_parquet(f"./data/Rotterdam_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
+    distance_df_workers.to_parquet(f"./data/asps_output/Rotterdam_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
 
     # save the depots nodes to a df
     df_depots = pd.DataFrame(df_nodes[df_nodes['highway'] == 'poi'].index.values, columns = ["depots"])
-    df_depots.to_parquet(f"./data/Rotterdam_depots.parquet.gzip", engine='pyarrow', compression='GZIP')
+    df_depots.to_parquet(f"./data/asps_output/Rotterdam_depots.parquet.gzip", engine='pyarrow', compression='GZIP')
 
     def constructPaths(G, from_edge : tuple, predecessors : dict, required_edges : list, nodes = True):
         # predecessors: keys are edges and values are previous edges
@@ -372,8 +377,8 @@ if __name__ == '__main__':
         path_df_workers.loc[mask, :] = constructPaths(G, edge, prev_edges, required_edges)
 
     path_df_workers.columns = [str(i) for i in range(len(required_edges))]
-    path_df_workers.to_parquet(f"./data/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
+    path_df_workers.to_parquet(f"./data/asps_output/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    # from plot_route import _plot_route
-    # route_map = _plot_route([5,23], G, path_df_workers, 12)
-    # route_map.save(outfile= "./data/solution.html")
+    from plot_route import _plot_route
+    route_map = _plot_route([5,23], G, path_df_workers, 12)
+    route_map.save(outfile= "./data/asps_output/solution.html")

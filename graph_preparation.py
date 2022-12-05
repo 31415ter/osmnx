@@ -72,9 +72,9 @@ if not load_from_memory:
     G = nx.compose(G, schiedam_graph)
     G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
 
-    # set lanes of edges correctly.
-    lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
-    nx.set_edge_attributes(G, name="lanes", values=lane_count)
+    # # set lanes of edges correctly.
+    # lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
+    # nx.set_edge_attributes(G, name="lanes", values=lane_count)
 
     utils.log("Save graph to parquet")
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
@@ -92,25 +92,43 @@ if load_from_memory:
 
     df_nodes = pd.read_parquet("./data/Rotterdam_nodes.parquet")
     df_edges = pd.read_parquet("./data/Rotterdam_edges.parquet")
+    utils.log("Load nodes and edges from parquet")
 
     # convert df to gdf
     gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry = gpd.points_from_xy(df_nodes.x, df_nodes.y))
     edge_geometry = df_edges["geometry"].apply(lambda x: LineString(x.tolist()))
     gdf_edges = gpd.GeoDataFrame(df_edges, geometry = edge_geometry)
+    utils.log("Converted nodes and edges df to gdfs")
 
     # convert np.arrays to lists when applicable
     for col in gdf_edges.columns:
         if not gdf_edges[col].apply(lambda x: not isinstance(x, np.ndarray)).all():
             gdf_edges[col] = [value if not isinstance(value, np.ndarray) else value.tolist() for value in gdf_edges[col]]
+    utils.log("Converted np.arrays to lists")
 
     # create graph from gdf
     G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
+    utils.log("Loaded graph from gdfs")
+
+ox.save_graph_geopackage(G, filepath="./data/0_initial_graph.gpkg", directed = True)
+
+depots = {
+    "name" : ["Giesenweg", "Laagjes"],
+    "lon" : [4.4279192, 4.5230457], 
+    "lat" : [51.9263550, 51.8837905], 
+    "amenity" : ["depot", "depot"]
+}
+G = toolbox.graph_inserted_pois(G, depots)
+utils.log("Inserted depots.")
+
+# set lanes of edges correctly.
+lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
+nx.set_edge_attributes(G, name="lanes", values=lane_count)
+utils.log("Set lane count of edges correctly.")
+ox.save_graph_geopackage(G, filepath="./data/1_depots_graph.gpkg", directed = True)
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
-
-# insert depots into graph
-depots = {"name" : ["Giesenweg", "Laagjes"] , "lon" : [4.4279192,4.5230457], "lat" : [51.9263550,51.8837905], "amenity" : ["depot", "depot"]}
-G = toolbox.graph_inserted_pois(G, depots)
+ox.save_graph_geopackage(G, filepath="./data/2_simplified_graph.gpkg", directed = True)
 
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
 depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
@@ -118,7 +136,9 @@ depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
 removed_nodes_list = []
 removed_edges_list = []
 removed_nodes = True
+
 utils.log("Begin removing deadends...")
+
 while removed_nodes:
     # Remove nodes which only have 1 incoming or 1 outgoing edges
     dead_ends = [
@@ -184,12 +204,14 @@ while removed_nodes:
     removed_edges_list += edges_to_remove
     G.remove_nodes_from(nodes_to_remove)
     G.remove_edges_from(edges_to_remove)
+    utils.log(f"Removed {len(nodes_to_remove)} nodes and {len(edges_to_remove)} edges.")
 
 utils.log(f"Removed {len(removed_nodes_list) + len(removed_edges_list)} deadends.")
+ox.save_graph_geopackage(G, filepath="./data/3_cleaned_graph.gpkg", directed = True)
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
 
-ox.save_graph_geopackage(G, filepath="./data/Rotterdam_bereik_network.gpkg", directed = True)
+ox.save_graph_geopackage(G, filepath="./data/4_final_graph.gpkg", directed = True)
 
 utils.log("Saving graph to parquet...")
 
