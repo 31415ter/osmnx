@@ -110,7 +110,7 @@ if load_from_memory:
     G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
     utils.log("Loaded graph from gdfs")
 
-ox.save_graph_geopackage(G, filepath="./data/0_initial_graph.gpkg", directed = True)
+# ox.save_graph_geopackage(G, filepath="./data/0_initial_graph.gpkg", directed = True)
 
 depots = {
     "name" : ["Giesenweg", "Laagjes"],
@@ -125,10 +125,10 @@ utils.log("Inserted depots.")
 lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
 nx.set_edge_attributes(G, name="lanes", values=lane_count)
 utils.log("Set lane count of edges correctly.")
-ox.save_graph_geopackage(G, filepath="./data/1_depots_graph.gpkg", directed = True)
+# ox.save_graph_geopackage(G, filepath="./data/1_depots_graph.gpkg", directed = True)
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
-ox.save_graph_geopackage(G, filepath="./data/2_simplified_graph.gpkg", directed = True)
+# ox.save_graph_geopackage(G, filepath="./data/2_simplified_graph.gpkg", directed = True)
 
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
 depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
@@ -207,7 +207,7 @@ while removed_nodes:
     utils.log(f"Removed {len(nodes_to_remove)} nodes and {len(edges_to_remove)} edges.")
 
 utils.log(f"Removed {len(removed_nodes_list) + len(removed_edges_list)} deadends.")
-ox.save_graph_geopackage(G, filepath="./data/3_cleaned_graph.gpkg", directed = True)
+# ox.save_graph_geopackage(G, filepath="./data/3_cleaned_graph.gpkg", directed = True)
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
 

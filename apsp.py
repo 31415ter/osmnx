@@ -300,18 +300,31 @@ if __name__ == '__main__':
     df_required_edges = pd.DataFrame(
         required_edges_data, 
         index = required_edges, 
-        columns = ['lanes', 'length', 'lanes:forward', 'lanes:backward', 'turn:lanes', 'speed_kph', 'oneway']
+        columns = ['lanes', 'length', 'lanes:forward', 'lanes:backward', 'turn:lanes', 'speed_kph', 'oneway', 'geometry']
     )
 
-    locs = list(range(0,25)) + [3904] + [3903] + [573] + [3038]
+    coordinates = []
+    for i in range(len(required_edges)):
+        coordinates_x = [x for x,y in list(df_required_edges.iloc[i]['geometry'].coords)]
+        coordinates_y = [y for x,y in list(df_required_edges.iloc[i]['geometry'].coords)]
+        avg_x = sum(coordinates_x) / len(coordinates_x)
+        avg_y = sum(coordinates_y) / len(coordinates_y)
+        coordinates.append((avg_x, avg_y))
+
+    df_required_edges['geometry'] = coordinates
+
+    # Get the indices of edges that are connected to a depot node
+    depot_edge_indices = []
+    for i, edge in enumerate(required_edges):
+        if edge[0] in depot_nodes or edge[1] in depot_nodes:
+            depot_edge_indices.append(i)
+
+# TODO : remove this
+    locs = list(set(range(0, 1000)).union(depot_edge_indices))
     required_edges = df_required_edges.index.values[locs].tolist()
 
     df_required_edges = df_required_edges.iloc[locs]
     df_required_edges.to_parquet(f"./data/asps_output/Rotterdam_edges.parquet.gzip", engine='pyarrow', compression='GZIP')
-
-    # # process distances in batches to ease memory usage
-    # edge_count = 25
-    # required_edges = required_edges[0:edge_count]
     
     distance_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
     path_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
@@ -341,44 +354,44 @@ if __name__ == '__main__':
     df_depots = pd.DataFrame(df_nodes[df_nodes['highway'] == 'poi'].index.values, columns = ["depots"])
     df_depots.to_parquet(f"./data/asps_output/Rotterdam_depots.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    def constructPaths(G, from_edge : tuple, predecessors : dict, required_edges : list, nodes = True):
-        # predecessors: keys are edges and values are previous edges
-        paths_coordinates = []
-        paths_nodes = []
-        # construct the coordinate path from the end of edge to the start of the required edge
-        for required_edge in required_edges:
-            path = []
-            nodes_path = []
-            edge = predecessors[required_edge]
-            while edge != from_edge:
-                prev_edge_data = G.get_edge_data(*edge)
-                if "geometry" in prev_edge_data:
-                    coords = list(prev_edge_data["geometry"].coords)
-                    coords = [coords[i] for i in range(len(coords)) if i == 0 or coords[i] != coords[i-1]]
-                else:
-                    u = edge[0]
-                    v = edge[1]
-                    coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
-                path = coords[1:] + path
-                nodes_path = [edge[1]] + nodes_path
-                edge = predecessors[edge]
-            path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
-            nodes_path = [from_edge[1]] + nodes_path
-            paths_coordinates.append(path)
-            paths_nodes.append(nodes_path)
-        return paths_coordinates if nodes == False else paths_nodes
+    # def constructPaths(G, from_edge : tuple, predecessors : dict, required_edges : list, nodes = True):
+    #     # predecessors: keys are edges and values are previous edges
+    #     paths_coordinates = []
+    #     paths_nodes = []
+    #     # construct the coordinate path from the end of edge to the start of the required edge
+    #     for required_edge in required_edges:
+    #         path = []
+    #         nodes_path = []
+    #         edge = predecessors[required_edge]
+    #         while edge != from_edge:
+    #             prev_edge_data = G.get_edge_data(*edge)
+    #             if "geometry" in prev_edge_data:
+    #                 coords = list(prev_edge_data["geometry"].coords)
+    #                 coords = [coords[i] for i in range(len(coords)) if i == 0 or coords[i] != coords[i-1]]
+    #             else:
+    #                 u = edge[0]
+    #                 v = edge[1]
+    #                 coords = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
+    #             path = coords[1:] + path
+    #             nodes_path = [edge[1]] + nodes_path
+    #             edge = predecessors[edge]
+    #         path = [(G.nodes[from_edge[1]]["x"], G.nodes[from_edge[1]]["y"])] + path
+    #         nodes_path = [from_edge[1]] + nodes_path
+    #         paths_coordinates.append(path)
+    #         paths_nodes.append(nodes_path)
+    #     return paths_coordinates if nodes == False else paths_nodes
 
-    for i in range(len(required_edges)):
-        if i % 100 == 0 and i != 0:
-            print(f"Completed {i} of {len(required_edges)}")
-        mask = (distance_df_workers.index == required_edges[i])
-        edge = required_edges[i]
-        prev_edges = results[required_edges.index(edge)][1]
-        path_df_workers.loc[mask, :] = constructPaths(G, edge, prev_edges, required_edges)
+    # for i in range(len(required_edges)):
+    #     if i % 100 == 0 and i != 0:
+    #         print(f"Completed {i} of {len(required_edges)}")
+    #     mask = (distance_df_workers.index == required_edges[i])
+    #     edge = required_edges[i]
+    #     prev_edges = results[required_edges.index(edge)][1]
+    #     path_df_workers.loc[mask, :] = constructPaths(G, edge, prev_edges, required_edges)
 
-    path_df_workers.columns = [str(i) for i in range(len(required_edges))]
-    path_df_workers.to_parquet(f"./data/asps_output/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
+    # path_df_workers.columns = [str(i) for i in range(len(required_edges))]
+    # path_df_workers.to_parquet(f"./data/asps_output/Rotterdam_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
 
-    from plot_route import _plot_route
-    route_map = _plot_route([5,23], G, path_df_workers, 12)
-    route_map.save(outfile= "./data/asps_output/solution.html")
+    # from plot_route import _plot_route
+    # route_map = _plot_route([5,23], G, path_df_workers, 12)
+    # route_map.save(outfile= "./data/asps_output/solution.html")

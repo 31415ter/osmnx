@@ -524,9 +524,9 @@ def _lane_count(edge):
             lane_count = int(int(edge["lanes"]) / 2)
         else:
             lane_count = int(edge["lanes"])
-    elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
-        # number of lanes are not defined, so we use the lanes#assumptions
-        lane_count = 2
+    # elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
+    #     # number of lanes are not defined, so we use the lanes#assumptions
+    #     lane_count = 1
     else:
         lane_count = 1
 
