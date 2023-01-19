@@ -503,9 +503,7 @@ def angle(G, in_edge, out_edge):
     float
         the angle between the two edges in degrees (-180 to 180)
     """
-
     
-
     in_edge_data = in_edge[len(in_edge)-1]
     out_edge_data = out_edge[len(out_edge)-1]
 

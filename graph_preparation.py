@@ -110,7 +110,7 @@ if load_from_memory:
     G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
     utils.log("Loaded graph from gdfs")
 
-# ox.save_graph_geopackage(G, filepath="./data/0_initial_graph.gpkg", directed = True)
+ox.save_graph_geopackage(G, filepath="./data/0_initial_graph.gpkg", directed = True)
 
 depots = {
     "name" : ["Giesenweg", "Laagjes"],
@@ -125,10 +125,10 @@ utils.log("Inserted depots.")
 lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
 nx.set_edge_attributes(G, name="lanes", values=lane_count)
 utils.log("Set lane count of edges correctly.")
-# ox.save_graph_geopackage(G, filepath="./data/1_depots_graph.gpkg", directed = True)
+ox.save_graph_geopackage(G, filepath="./data/1_depots_graph.gpkg", directed = True)
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
-# ox.save_graph_geopackage(G, filepath="./data/2_simplified_graph.gpkg", directed = True)
+ox.save_graph_geopackage(G, filepath="./data/2_simplified_graph.gpkg", directed = True)
 
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
 depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
@@ -140,13 +140,14 @@ removed_nodes = True
 utils.log("Begin removing deadends...")
 
 while removed_nodes:
-    # Remove nodes which only have 1 incoming or 1 outgoing edges
+    # Remove nodes which only have 1 incoming or 1 outgoing edges,
+    # as these nodes are absorbing and thus cannot be used in a routing solution
     dead_ends = [
         node for node in G.nodes() if len(G.in_edges(node)) == 0 or len(G.out_edges(node)) == 0
     ]
 
-    # TODO CHECK IF THESE EDGES ARE THE SAME LENGTH?
     # Remove nodes with only one incoming and one outgoing edge, and these two edges originate from the same nodes (i.e., (u,v,k) == (v,u,k))
+    # I.e., u-turns 
     forbidden_u_turns = [
         node for node in G.nodes() if (
             len(G.in_edges(node)) == 1 
@@ -154,45 +155,52 @@ while removed_nodes:
             and list(G.in_edges(node, keys = True))[0][0] == list(G.out_edges(node, keys = True))[0][1] # u == v
             and list(G.in_edges(node, keys = True))[0][1] == list(G.out_edges(node, keys = True))[0][0] # v == u
             and list(G.in_edges(node, keys = True))[0][2] == list(G.out_edges(node, keys = True))[0][2] # keys should be equal
+            and ox.utils_geo.angle(G, list(G.in_edges(node, keys = True, data = True))[0], list(G.out_edges(node, keys = True, data = True))[0]) < 40
         )
     ]
 
-    sharp_turns = [
-        node for node in G.nodes() if (
-            len(G.out_edges(node)) == 1
-            and all([abs(ox.utils_geo.angle(G, in_edge, list(G.out_edges(node, data = True))[0])) < 40 for in_edge in list(G.in_edges(node, data = True))])
-        )
-    ]
-    
-    sharp_turns += ([
-        node for node in G.nodes() if (
-            len(G.in_edges(node)) == 1
-            and all(abs(ox.utils_geo.angle(G, list(G.in_edges(node, data = True))[0], out_edge)) < 40 for out_edge in list(G.out_edges(node, data = True)))
-        )
-    ])
+    # Find sharp turns in a graph by checking if the angle between incoming and outgoing edges is greater than 40 degrees.
+    sharp_turns = []
+    for node in G.nodes():
+        found_sufficient_angle = False
+
+        for in_edge in list(G.in_edges(node, keys = True, data = True)):
+            for out_edge in list(G.out_edges(node, keys = True, data = True)):
+                if abs(ox.utils_geo.angle(G, in_edge, out_edge)) >= 40:
+                    found_sufficient_angle = True
+
+        if not found_sufficient_angle:
+            sharp_turns += [node]
 
     nodes_to_remove = list(set(dead_ends + forbidden_u_turns + sharp_turns))
 
     edges_to_remove = []
-    # scan for streets that have one incoming edge.
+    #consider each edge in the graph
     for edge in G.edges(keys = True, data = True):
+
+        # if the edge is adjacent to a depot, do not consider it for removal
         if edge[0] in depot_nodes or edge[1] in depot_nodes:
             continue
 
+        # If the number of outgoing edges from the target node of the considered edge is 1,
+        # check if the outgoing edge is equal to the considered edge or its angle is smaller than 40
         if len(G.out_edges(edge[1])) == 1:
             out_edge = list(G.out_edges(edge[1], data = True))[0]
-            if out_edge[0] == edge[1] and out_edge[1] == edge[0]:
-                edges_to_remove += [edge]
-            elif abs(ox.utils_geo.angle(G, edge, out_edge)) < 40:
+            # if out_edge[0] == edge[1] and out_edge[1] == edge[0]:
+            #     edges_to_remove += [edge]
+            if abs(ox.utils_geo.angle(G, edge, out_edge)) < 40:
                 edges_to_remove += [edge]
             
+        # If the number of incoming edges from the starting node of the considered edge is 1,
+        # check if the incoming edge is equal to the considered edge or its angle is smaller than 40
         if len(G.in_edges(edge[0])) == 1:
             in_edge = list(G.in_edges(edge[0], data = True))[0]
-            if in_edge[0] == edge[1] and in_edge[1] == edge[0]:
-                edges_to_remove += [edge]
-            elif abs(ox.utils_geo.angle(G, in_edge, edge)) < 40:
+            # if in_edge[0] == edge[1] and in_edge[1] == edge[0]:
+            #     edges_to_remove += [edge]
+            if abs(ox.utils_geo.angle(G, in_edge, edge)) < 40:
                 edges_to_remove += [edge]
 
+    # make sure that the depot node is not removed
     for depot in depot_nodes:
         if depot in nodes_to_remove:
             nodes_to_remove.remove(depot)
@@ -207,7 +215,7 @@ while removed_nodes:
     utils.log(f"Removed {len(nodes_to_remove)} nodes and {len(edges_to_remove)} edges.")
 
 utils.log(f"Removed {len(removed_nodes_list) + len(removed_edges_list)} deadends.")
-# ox.save_graph_geopackage(G, filepath="./data/3_cleaned_graph.gpkg", directed = True)
+ox.save_graph_geopackage(G, filepath="./data/3_cleaned_graph.gpkg", directed = True)
 
 G = ox.simplify_graph(G, allow_lanes_diff=False)
 
