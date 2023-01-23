@@ -518,21 +518,31 @@ def _update_edge_keys(G):
 # a roundabout is assumed to have 1 lane, if not specified otherwise
 def _lane_count(edge):
     lane_count = None
-    if edge["lanes"] == edge["lanes"]:
-        # if edge is not oneway, lanes are divided equally between both directions
-        if edge["oneway"] not in {"yes", True, 1, "true", "1"}:
-            lane_count = int(int(edge["lanes"]) / 2)
+
+    # number of lanes are not defined, so we use the lanes#assumptions
+    if 'lanes' not in edge:        
+        if edge["highway"] in ["motorway", "trunk"]:
+            lane_count = 2
         else:
-            lane_count = int(edge["lanes"])
-    # elif edge["highway"] in ["residential", "tertiary", "secondary", "primary"]:
-    #     # number of lanes are not defined, so we use the lanes#assumptions
-    #     lane_count = 1
+            lane_count = 1
+    # number of lanes are defined, infer the count
     else:
-        lane_count = 1
+        if edge["lanes"] == edge["lanes"]:
+            # if edge is not oneway, lanes are divided equally between both directions
+            if edge["oneway"] not in {"yes", True, 1, "true", "1"}:
+                lane_count = int(int(edge["lanes"]) / 2)
+            else:
+                lane_count = int(edge["lanes"])
+        else:
+            lane_count = 1
 
     reversed = edge['reversed']
-    lanes_backward = edge['lanes:backward']
-    lanes_forward = edge['lanes:forward']
+    lanes_backward = edge['lanes:backward'] if 'lanes:backward' in edge else float('nan')
+    lanes_forward = edge['lanes:forward'] if 'lanes:forward' in edge else float('nan')
+    
+    # x == x checks if a variable is 'nan', returns False if it is nan
+    # https://stackoverflow.com/questions/944700/how-can-i-check-for-nan-values
+    # Thus only execute this piece of code if one of the two variables is not nan
     if (lanes_backward == lanes_backward or lanes_forward == lanes_forward):
         if reversed and lanes_backward == lanes_backward:
             # edge is reversed and lanes backward is specified

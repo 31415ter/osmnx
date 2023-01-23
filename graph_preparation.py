@@ -1,4 +1,3 @@
-import pandas as pd
 import warnings
 import numpy as np
 import networkx as nx
@@ -61,62 +60,67 @@ hwy_speeds = {
     'living_street': 5
 }
 
-load_from_memory = True
+# load_from_memory = True
 
-if not load_from_memory:
-    rotterdam_graph = ox.graph_from_place("Rotterdam", custom_filter = cf, buffer_dist=2000, truncate_by_edge=True, simplify=False)
-    hoogvliet_graph = ox.graph_from_place("Hoogvliet", custom_filter = cf, buffer_dist=3000, truncate_by_edge=True, simplify=False)
-    schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist=1000, truncate_by_edge=True, simplify=False)
+# if not load_from_memory:
+#     rotterdam_graph = ox.graph_from_place("Rotterdam", custom_filter = cf, buffer_dist=2000, truncate_by_edge=True, simplify=False)
+#     hoogvliet_graph = ox.graph_from_place("Hoogvliet", custom_filter = cf, buffer_dist=3000, truncate_by_edge=True, simplify=False)
+#     schiedam_graph = ox.graph_from_place("Schiedam", custom_filter = cf, buffer_dist=1000, truncate_by_edge=True, simplify=False)
 
-    G = nx.compose(rotterdam_graph, hoogvliet_graph)
-    G = nx.compose(G, schiedam_graph)
-    G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
+#     G = nx.compose(rotterdam_graph, hoogvliet_graph)
+#     G = nx.compose(G, schiedam_graph)
+#     G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
 
-    # # set lanes of edges correctly.
-    # lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _data) in G.edges(keys = True, data=True)}
-    # nx.set_edge_attributes(G, name="lanes", values=lane_count)
+#     utils.log("Save graph to parquet")
+#     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
 
-    utils.log("Save graph to parquet")
-    gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
+#     gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
+#     gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
 
-    gdf_edges["geometry"] = gdf_edges["geometry"].apply(lambda x : list(x.coords))
-    gdf_nodes["geometry"] = gdf_nodes["geometry"].apply(lambda x : list(x.coords))
+#     gdf_nodes.to_parquet("./data/Rotterdam_nodes.parquet", engine='pyarrow')
+#     gdf_edges.to_parquet("./data/Rotterdam_edges.parquet", engine='pyarrow')
 
-    gdf_nodes.to_parquet("./data/Rotterdam_nodes.parquet", engine='pyarrow')
-    gdf_edges.to_parquet("./data/Rotterdam_edges.parquet", engine='pyarrow')
+# if load_from_memory:
+    # # load df from parquet
+    # import geopandas as gpd
+    # from shapely.geometry import LineString
 
-if load_from_memory:
-    # load df from parquet
-    import geopandas as gpd
-    from shapely.geometry import LineString
+    # df_nodes = pd.read_parquet("./data/Rotterdam_nodes.parquet")
+    # df_edges = pd.read_parquet("./data/Rotterdam_edges.parquet")
+    # utils.log("Load nodes and edges from parquet")
 
-    df_nodes = pd.read_parquet("./data/Rotterdam_nodes.parquet")
-    df_edges = pd.read_parquet("./data/Rotterdam_edges.parquet")
-    utils.log("Load nodes and edges from parquet")
+    # # convert df to gdf
+    # gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry = gpd.points_from_xy(df_nodes.x, df_nodes.y))
+    # edge_geometry = df_edges["geometry"].apply(lambda x: LineString(x.tolist()))
+    # gdf_edges = gpd.GeoDataFrame(df_edges, geometry = edge_geometry)
+    # utils.log("Converted nodes and edges df to gdfs")
 
-    # convert df to gdf
-    gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry = gpd.points_from_xy(df_nodes.x, df_nodes.y))
-    edge_geometry = df_edges["geometry"].apply(lambda x: LineString(x.tolist()))
-    gdf_edges = gpd.GeoDataFrame(df_edges, geometry = edge_geometry)
-    utils.log("Converted nodes and edges df to gdfs")
+    # # convert np.arrays to lists when applicable
+    # for col in gdf_edges.columns:
+    #     if not gdf_edges[col].apply(lambda x: not isinstance(x, np.ndarray)).all():
+    #         gdf_edges[col] = [value if not isinstance(value, np.ndarray) else value.tolist() for value in gdf_edges[col]]
+    # utils.log("Converted np.arrays to lists")
 
-    # convert np.arrays to lists when applicable
-    for col in gdf_edges.columns:
-        if not gdf_edges[col].apply(lambda x: not isinstance(x, np.ndarray)).all():
-            gdf_edges[col] = [value if not isinstance(value, np.ndarray) else value.tolist() for value in gdf_edges[col]]
-    utils.log("Converted np.arrays to lists")
+    # # create graph from gdf
+    # G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
+    # utils.log("Loaded graph from gdfs")
 
-    # create graph from gdf
-    G = ox.graph_from_gdfs(gdf_nodes = gdf_nodes, gdf_edges = gdf_edges)
-    utils.log("Loaded graph from gdfs")
+north, west = 51.946869,4.394074
+south, east = 51.937416,4.416955
+G = ox.graph_from_bbox(north, south, east, west, custom_filter = cf, truncate_by_edge=True, simplify=False)
+G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
 
 ox.save_graph_geopackage(G, filepath="./data/0_initial_graph.gpkg", directed = True)
 
 depots = {
-    "name" : ["Giesenweg", "Laagjes"],
-    "lon" : [4.4279192, 4.5230457], 
-    "lat" : [51.9263550, 51.8837905], 
-    "amenity" : ["depot", "depot"]
+    #"name" : ["Giesenweg", "Laagjes"],
+    "name" : ["test"],
+    # "lon" : [4.4279192, 4.5230457], 
+    # "lat" : [51.9263550, 51.8837905], 
+    "lon" : [4.4140254],
+    "lat" : [51.9409707],
+    "amenity" : ["depot"]
+    #"amenity" : ["depot", "depot"]
 }
 G = toolbox.graph_inserted_pois(G, depots)
 utils.log("Inserted depots.")
@@ -126,9 +130,6 @@ lane_count = {(_from, _to, _key) : _lane_count(_data) for (_from, _to, _key, _da
 nx.set_edge_attributes(G, name="lanes", values=lane_count)
 utils.log("Set lane count of edges correctly.")
 ox.save_graph_geopackage(G, filepath="./data/1_depots_graph.gpkg", directed = True)
-
-G = ox.simplify_graph(G, allow_lanes_diff=False)
-ox.save_graph_geopackage(G, filepath="./data/2_simplified_graph.gpkg", directed = True)
 
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
 depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
