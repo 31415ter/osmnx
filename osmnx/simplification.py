@@ -322,10 +322,15 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
             # get edge between these nodes: if multiple edges exist between
             # them (see above), we retain only one in the simplified graph
 
+            # TODO assign key in a more robust manner,
+            # instead of iterating the possible keys
             try:
                 edge_data = G.edges[u,v,0]
             except:
-                edge_data = G.edges[u,v,1]
+                try:
+                    edge_data = G.edges[u,v,1]
+                except:
+                    edge_data = G.edges[u,v,2]
             
             if "geometry" in edge_data: 
                 # if this edge has a geometry, set the geometry equal to the coordinates of the linestring
@@ -346,7 +351,6 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
             
             # flatten the list of coordinates for the geometry
             path_attributes['geometry'] = utils.flatten(path_attributes['geometry'])
-
 
         # consolidate the path's edge segments' attribute values
         for attr in path_attributes:

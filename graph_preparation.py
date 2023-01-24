@@ -5,7 +5,7 @@ import osmnx as ox
 
 from shapely.errors import ShapelyDeprecationWarning
 from osmnx import utils
-from graph_preparation import toolbox 
+from streetnx import toolbox 
 from fibheap import *
 
 from osmnx.utils_graph import _lane_count

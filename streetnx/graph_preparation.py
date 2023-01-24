@@ -1,8 +1,8 @@
 import osmnx as ox
 import networkx as nx
 
-from graph_preparation.toolbox import graph_inserted_pois
-from graph_preparation.utils import get_lane_count, remove_deadends
+from streetnx import toolbox
+from streetnx import utils as graph_utils
 from osmnx import utils
 
 FILE_PATH = "./data/"
@@ -51,7 +51,7 @@ HWY_SPEEDS = {
 'living_street': 5
 }
 
-def load_graph(
+def download_graph(
         city_names,
         useful_tags_way = USEFUL_TAGS_WAY,
         custom_filter = CUSTOM_FILTER,
@@ -81,6 +81,7 @@ def load_graph(
         else:
             G = temp_graph
     utils.log("Finished loading the graph.")
+
     return G
 
 def process_graph(
@@ -94,23 +95,26 @@ def process_graph(
     G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
     utils.log("Added edge speeds to the graph.")
 
-    G = graph_inserted_pois(G, depot_dict)
+    G = toolbox.graph_inserted_pois(G, depot_dict)
     utils.log("Finished inserting depots into the graph.")
 
-    lane_counts = {(from_node, to_node, key) : get_lane_count(data) for (from_node, to_node, key, data) in G.edges(keys = True, data=True)}
+    lane_counts = {
+        (from_node, to_node, key) : graph_utils.get_lane_count(data) 
+        for (from_node, to_node, key, data) 
+        in G.edges(keys = True, data=True)
+    }
     nx.set_edge_attributes(G, name="lanes", values=lane_counts)
     utils.log("Set lane count of edges.")
         
+    G = ox.simplify_graph(G, allow_lanes_diff=False)
+
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
     depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
 
-    G = ox.simplify_graph(G, allow_lanes_diff=False)
-
     utils.log("Start removing deadends")
-    remove_deadends(G, depot_nodes)
+    graph_utils.remove_deadends(G, depot_nodes)
     utils.log("Finished removing deadends")
 
-    # Simplify graph
     G = ox.simplify_graph(G, allow_lanes_diff=False)
 
     return G
@@ -118,3 +122,6 @@ def process_graph(
 def save_graph(G, name):
     ox.save_graphml(G, filepath=FILE_PATH + name + ".graphml")
     ox.save_graph_geopackage(G, filepath=FILE_PATH + name + ".gpkg", directed = True)
+
+def load_graph(name):
+    return ox.load_graphml(filepath=FILE_PATH + name + ".graphml")

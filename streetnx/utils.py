@@ -113,6 +113,18 @@ def get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold):
     return (nodes_to_remove, edges_to_remove)
 
 def remove_deadends(G, depot_nodes, angle_treshold = 40):
+    """
+    This function removes dead-end nodes and edges from the input graph G,
+    using the provided list of depot nodes and angle treshold to determine dead-ends.
+    
+    Parameters:
+    - G: A networkx graph object representing the input graph.
+    - depot_nodes: A list of nodes in G that are considered as depots and hence will not be removed.
+    - angle_treshold: An angle threshold value (in degrees) used to determine whether a edge pair is a dead-end or not.
+
+    Returns:
+    None. The input graph G is modified in place.
+    """
     nodes, edges = get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold)
 
     while not are_lists_empty((nodes, edges)):

@@ -1,9 +1,3 @@
-# Yuwen Chang
-# 2020-08-16
-
-# PAJ Versfelt
-# 14-09-2022
-
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -218,16 +212,16 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
         else:
             new_edges = gpd.GeoDataFrame(pois[[key_col]], geometry=new_lines, columns=[key_col, 'geometry'])
             new_edges['oneway'] = False
+            new_edges['reversed'] = False
             new_edges['highway'] = edge_highway
             new_edges['k'] = 0
 
         # update features (a bit slow)
-        # new_edges['length'] = [l.length for l in new_lines]
         new_edges['from'] = new_edges['geometry'].map(
             lambda x: nodes_id_dict.get(list(x.coords)[0], None))
         new_edges['to'] = new_edges['geometry'].map(
             lambda x: nodes_id_dict.get(list(x.coords)[-1], None))
-        new_edges['osmid'] = [', '.join(list(map(str, s))) for s in zip(new_edges['from'], new_edges['to'])]
+        new_edges['osmid'] = [list(x) for x in zip(new_edges['from'], new_edges['to'])]
 
         x = [coord.xy[0] for coord in new_edges['geometry']]
         y = [coord.xy[1] for coord in new_edges['geometry']]
@@ -377,6 +371,7 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
         from shapely.geometry import LineString
         oneway_values = {"yes", "true", "1", "-1", "reverse", "T", "F", 1, -1, True}
         for u, v, data in list(G.edges(data=True)):
+
             # check if the data contains a "oneway" indicator
             if "oneway" in data and (bool(set(list(data["oneway"])) & oneway_values) if isinstance(data["oneway"], list) else data["oneway"] in oneway_values): 
                 continue
@@ -408,20 +403,6 @@ def graph_from_gpd(edges, nodes, crs = 'epsg:4326'):
     add_reverse_edges(V)
 
     return V
-
-def graph_with_pois_inserted(G, city, tags, key_col='osmid', projected_footways=False, node_pois=False, dict_tags = {'name'}):
-    pois, nodes, edges = initialize_pois(G, city, tags)
-
-    new_nodes, new_edges = connect_poi(pois, 
-        nodes, 
-        edges, 
-        key_col=key_col, 
-        projected_footways=projected_footways, 
-        node_pois=node_pois, 
-        dict_tags=dict_tags
-    )
-
-    return graph_from_gpd(new_edges, new_nodes)
 
 def graph_inserted_pois(G, pois, projected_ways = True, node_pois = True):
 

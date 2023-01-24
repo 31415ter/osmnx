@@ -1,10 +1,8 @@
 import osmnx as ox
-import pandas as pd
-import numpy as np
 import folium
 import folium.plugins as plugins
 
-def _plot_route(solution, G, paths, depot_node, route_map = None):
+def plot_route(solution, G, paths, depot_node, route_map = None):
     edges_ids = paths.index
     paths = paths.values
 
@@ -50,28 +48,28 @@ def _plot_route(solution, G, paths, depot_node, route_map = None):
 
     route_map.save(outfile= "./data/solution.html")
 
-    return route_map#_plot_route_markers_folium(G, route_map, solution, paths)
-    
-def _plot_route_markers_folium(G, route_map, solution, paths):
-    required_nodes = [44409833] + [node for (node, data) in G.nodes(data = True) if 'amenity' in data and data['amenity'] == data['amenity']]
-    gdf_nodes = ox.graph_to_gdfs(G)[0]
-    nodes = gdf_nodes.loc[np.isin(gdf_nodes.index, required_nodes)]
-
-    indices = list(pd.read_parquet("./data/Rotterdam_pois_distances.parquet").index)
-    sequence = [(indices[solution[i]], i+1) for i in range(len(solution))]
-    
-    for key,value in sequence:
-        nodes.loc[key, "sequence"] = int(value)
-    
-    for i in range(0,len(nodes)):
-        folium.Marker(
-            location=[nodes.iloc[i]['y'], nodes.iloc[i]['x']], popup=None,
-            icon=plugins.BeautifyIcon(
-                             icon="arrow-down", icon_shape="marker",
-                             number=nodes.iloc[i]['sequence'],
-                             border_color= "#757575",
-                             background_color="#FFFFFF"
-                         )
-        ).add_to(route_map)
-
     return route_map
+    
+# def _plot_route_markers_folium(G, route_map, solution, paths):
+#     required_nodes = [44409833] + [node for (node, data) in G.nodes(data = True) if 'amenity' in data and data['amenity'] == data['amenity']]
+#     gdf_nodes = ox.graph_to_gdfs(G)[0]
+#     nodes = gdf_nodes.loc[np.isin(gdf_nodes.index, required_nodes)]
+
+#     indices = list(pd.read_parquet("./data/Rotterdam_pois_distances.parquet").index)
+#     sequence = [(indices[solution[i]], i+1) for i in range(len(solution))]
+    
+#     for key,value in sequence:
+#         nodes.loc[key, "sequence"] = int(value)
+    
+#     for i in range(0,len(nodes)):
+#         folium.Marker(
+#             location=[nodes.iloc[i]['y'], nodes.iloc[i]['x']], popup=None,
+#             icon=plugins.BeautifyIcon(
+#                              icon="arrow-down", icon_shape="marker",
+#                              number=nodes.iloc[i]['sequence'],
+#                              border_color= "#757575",
+#                              background_color="#FFFFFF"
+#                          )
+#         ).add_to(route_map)
+
+#     return route_map

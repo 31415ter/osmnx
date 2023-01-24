@@ -1,4 +1,5 @@
-import graph_preparation.graph_preparation as prep
+import streetnx as snx
+import osmnx as ox
 
 depots = {
     "name" : ["Giesenweg", "Laagjes"],
@@ -7,6 +8,6 @@ depots = {
     "amenity" : ["depot", "depot"]
 }
 
-G = prep.load_graph(["Hoogvliet", "Rotterdam", "Schiedam"])
-G = prep.process_graph(G, depots)
-prep.save_graph(G, "Rotterdam_netwerk")
+G = snx.download_graph(["Rotterdam", "Hoogvliet", "Schiedam"])
+G = snx.process_graph(G, depots)
+snx.save_graph(G, "Rotterdam_totale_netwerk")

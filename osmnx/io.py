@@ -221,7 +221,7 @@ def load_graphml(
         "lat": float,
         "lon": float,
         "osmid": int,
-        "street_count": int,
+        "street_count": float,
         "x": float,
         "y": float,
     }
