@@ -13,8 +13,6 @@ from . import stats
 from . import utils
 from . import utils_graph
 
-from osmnx.utils_graph import _lane_count
-
 def _is_endpoint(G, node, strict=True, allow_lanes_diff=True):
     """
     Is node a true endpoint of an edge.

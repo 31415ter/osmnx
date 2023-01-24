@@ -7,7 +7,7 @@ import networkx as nx
 import osmnx as ox
 import geopandas as gpd
 
-from osmnx import toolbox 
+from graph_preparation import toolbox 
 from osmnx import utils
 from fibheap import *
 from shapely.geometry import LineString
