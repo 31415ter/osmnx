@@ -10,10 +10,12 @@ class HighwayType(Enum):
     LIVING_STREET = 6
     RESIDENTIAL = 6
     SERVICE = 7
+    PROJECTED_FOOTWAY = 7
 
     @classmethod
-    def from_string(cls, string):
+    def from_edge(cls, edge):
+        string = edge["highway"]
         for name, member in cls.__members__.items():
-            if name.lower() == string.lower():
+            if name.lower() in string:
                 return member
         raise ValueError(f"Invalid highway type string: {string}")

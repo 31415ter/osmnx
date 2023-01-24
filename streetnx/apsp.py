@@ -71,7 +71,8 @@ def setTurnPenalties(G, gamma = 10, minimum_turn_angle = 40):
                     G.turn_penalties[(in_edge, out_edge)] = float('inf')
                     continue # cannot perform u-turns todo, is this correct? are edge lenghts the same?
                 angle = ox.utils_geo.angle(G, incoming_edge, outgoing_edge) # calculate angle between the two edges
-                if angle < 0: angle = 360 + angle
+                if angle < 0: 
+                    angle = 360 + angle
 
                 road_turn = turn(incoming_edge, outgoing_edge, angle)
                 turns.append(road_turn)

@@ -504,8 +504,8 @@ def angle(G, in_edge, out_edge):
         the angle between the two edges in degrees (-180 to 180)
     """
     
-    in_edge_data = in_edge[len(in_edge)-1]
-    out_edge_data = out_edge[len(out_edge)-1]
+    in_edge_data = G.get_edge_data(*in_edge) #in_edge[len(in_edge)-1]
+    out_edge_data = G.get_edge_data(*out_edge) #out_edge[len(out_edge)-1]
 
     # check if the in_edge has a geometry attribute, 
     # if the edge contains the geometry attribute, select the second last coordinates of the geometry

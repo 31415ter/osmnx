@@ -13,5 +13,4 @@ import osmnx as ox
 # snx.save_graph(G, "Rotterdam_totale_netwerk")
 
 G = snx.load_graph("Rotterdam_totale_netwerk")
-
 snx.add_penalties(G)
