@@ -151,3 +151,13 @@ def are_lists_empty(pair):
     False
     """
     return all(len(lst) == 0 for lst in pair)
+
+def get_travel_time(G, edge, max_speed):
+    edge_data = G.get_edge_data(*edge)
+    if isinstance(edge_data["length"], list):
+        distance = 0
+        for i in range(len(edge_data["length"])):
+            distance += edge_data["length"][i] / (min(max_speed, edge_data["speed_kph"][i]) / 3.6)
+        return distance
+    else:
+        return edge_data["length"] / (edge_data["speed_kph"] / 3.6)
