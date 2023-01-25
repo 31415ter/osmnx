@@ -47,6 +47,4 @@ def plot_route(G, solution, depot_edges, paths, route_map=None):
     to_depot_arcs = paths[solution[-1], depot_edges[1]].tolist()
     if len(to_depot_arcs) > 1: route_map = ox.plot_route_folium(G, to_depot_arcs, color='#fb00ff', opacity=1, route_map=route_map) # roze, terugweg
 
-    route_map.save(outfile= "./data/solution.html")
-
     return route_map

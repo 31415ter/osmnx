@@ -11,12 +11,12 @@ import osmnx as ox
 # G = snx.download_graph(["Rotterdam", "Hoogvliet", "Schiedam"])
 # G = snx.process_graph(G, depots)
 # snx.save_graph(G, "Rotterdam_totale_netwerk")
+
 if __name__ == '__main__':
     ox.config(log_console=True)
-
     name = "Rotterdam_totale_netwerk"
-
     G = snx.load_graph(name)
+
     # snx.add_penalties(G)
     # required_edges = snx.load_required_edges(G)
     # distances, paths = snx.get_shortest_paths(G, required_edges=required_edges, max_speed=100)
@@ -24,5 +24,5 @@ if __name__ == '__main__':
 
     distances, paths = snx.load_shortest_paths(name)
 
-    route_map = snx.plot_route(G, solution=[30, 25], depot_edges=[48,46], paths=paths)
+    route_map = snx.plot_route(G, solution=[35], depot_edges=[48,46], paths=paths)
     snx.save_route(route_map, name)
