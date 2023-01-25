@@ -12,10 +12,6 @@ def add_penalties(G, turn_angle_threshold = 40):
     G.turns = {}
     G.gamma = get_average_edge_duration(G)
 
-    # create dictonary that contains the turn 
-    # types of each adjacent pair of edges
-    turn_dict = {}
-
     # iterate over each node (i.e. intersection) in the graph and
     # check each adjacent pair of edges (i.e. road) to that node
     # to assign the correct turn type to the edge pair
@@ -36,7 +32,7 @@ def add_penalties(G, turn_angle_threshold = 40):
                 # if the in and out edge visit the same nodes, but in opposing direction,
                 # and the edge lengths are equal, then the turn is a U-turn
                 if (in_edge[0] == out_edge[1]) and (in_edge_data['length'] == out_edge_data['length']):
-                    turn_dict[(in_edge, out_edge)] = TurnType.UTURN
+                    G.turns[(in_edge, out_edge)] = TurnType.UTURN
                     continue
 
                 turn = get_turn(G, in_edge=in_edge, out_edge=out_edge)

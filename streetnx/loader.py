@@ -1,9 +1,10 @@
 import osmnx as ox
 import networkx as nx
+import pandas as pd
 
 from streetnx import toolbox
 from streetnx import utils as graph_utils
-from osmnx import utils
+from osmnx import utils as ox_utils
 
 FILE_PATH = "./data/"
 
@@ -66,7 +67,7 @@ def download_graph(
         useful_tags_way=useful_tags_way
     )
 
-    utils.log("Start downloading the graph.")
+    ox_utils.log("Start downloading the graph.")
     G = None
     for city_name in city_names:
         temp_graph = ox.graph_from_place(
@@ -80,7 +81,7 @@ def download_graph(
             G = nx.compose(temp_graph, G)
         else:
             G = temp_graph
-    utils.log("Finished downloading the graph.")
+    ox_utils.log("Finished downloading the graph.")
 
     return G
 
@@ -93,10 +94,10 @@ def process_graph(
     assert len(depot_dict) > 0, "At least one depot should be specified."
 
     G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
-    utils.log("Added edge speeds to the graph.")
+    ox_utils.log("Added edge speeds to the graph.")
 
     G = toolbox.graph_inserted_pois(G, depot_dict)
-    utils.log("Finished inserting depots into the graph.")
+    ox_utils.log("Finished inserting depots into the graph.")
 
     lane_counts = {
         (from_node, to_node, key) : graph_utils.get_lane_count(data) 
@@ -104,29 +105,54 @@ def process_graph(
         in G.edges(keys = True, data=True)
     }
     nx.set_edge_attributes(G, name="lanes", values=lane_counts)
-    utils.log("Set lane count of edges.")
+    ox_utils.log("Set lane count of edges.")
         
     G = ox.simplify_graph(G, allow_lanes_diff=False)
 
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
     depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
 
-    utils.log("Start removing deadends")
+    ox_utils.log("Start removing deadends")
     graph_utils.remove_deadends(G, depot_nodes)
-    utils.log("Finished removing deadends")
+    ox_utils.log("Finished removing deadends")
 
     G = ox.simplify_graph(G, allow_lanes_diff=False)
 
     return G
 
 def save_graph(G, name):
-    utils.log("Start saving the graph.")
+    ox_utils.log("Start saving the graph.")
     ox.save_graphml(G, filepath=FILE_PATH + name + ".graphml")
     ox.save_graph_geopackage(G, filepath=FILE_PATH + name + ".gpkg", directed = True)
-    utils.log("Finished saving the graph.")
+    ox_utils.log("Finished saving the graph.")
 
 def load_graph(name):
-    utils.log("Start reading the graph.")
+    ox_utils.log("Start reading the graph.")
     G = ox.load_graphml(filepath=FILE_PATH + name + ".graphml")
-    utils.log("Finished reading the graph.")
+    ox_utils.log("Finished reading the graph.")
     return G
+
+def load_required_edges(G):
+    # TODO create function to download required edges from ARCGIS?
+
+    required_edges = [
+        (u,v,k)
+        for u,v,k,d 
+        in G.edges(keys=True, data=True) 
+        if d['highway'] in ["primary", "projected_footway"] # , "primary_link", "secondary", "secondary_link"
+    ]
+
+    return required_edges[-50:]
+
+def save_shortest_paths(distances, paths, name: str):
+    distances.to_parquet(f"./data/" + name + "_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
+    paths.to_parquet(f"./data/" + name + "_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
+
+def load_shortest_paths(name: str):
+    distances = pd.read_parquet(f"./data/" + name + "_distances.parquet.gzip", engine='pyarrow')
+    paths = pd.read_parquet(f"./data/" + name + "_paths.parquet.gzip", engine='pyarrow')
+    return distances, paths
+
+def save_route(route_map, name: str):
+    route_map.save(outfile= "./data/" + name + ".html")
+
