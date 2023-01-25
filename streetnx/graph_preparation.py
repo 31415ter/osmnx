@@ -66,7 +66,7 @@ def download_graph(
         useful_tags_way=useful_tags_way
     )
 
-    utils.log("Start loading the graph.")
+    utils.log("Start downloading the graph.")
     G = None
     for city_name in city_names:
         temp_graph = ox.graph_from_place(
@@ -80,7 +80,7 @@ def download_graph(
             G = nx.compose(temp_graph, G)
         else:
             G = temp_graph
-    utils.log("Finished loading the graph.")
+    utils.log("Finished downloading the graph.")
 
     return G
 
@@ -120,8 +120,13 @@ def process_graph(
     return G
 
 def save_graph(G, name):
+    utils.log("Start saving the graph.")
     ox.save_graphml(G, filepath=FILE_PATH + name + ".graphml")
     ox.save_graph_geopackage(G, filepath=FILE_PATH + name + ".gpkg", directed = True)
+    utils.log("Finished saving the graph.")
 
 def load_graph(name):
-    return ox.load_graphml(filepath=FILE_PATH + name + ".graphml")
+    utils.log("Start reading the graph.")
+    G = ox.load_graphml(filepath=FILE_PATH + name + ".graphml")
+    utils.log("Finished reading the graph.")
+    return G

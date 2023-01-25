@@ -1,4 +1,5 @@
 import osmnx as ox
+import math
 
 from osmnx import utils
 
@@ -161,3 +162,6 @@ def get_travel_time(G, edge, max_speed):
         return distance
     else:
         return edge_data["length"] / (edge_data["speed_kph"] / 3.6)
+    
+def is_nan(value):
+    return math.isnan(value)

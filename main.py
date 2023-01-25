@@ -1,6 +1,8 @@
 import streetnx as snx
 import osmnx as ox
 
+ox.config(log_console=True)
+
 # depots = {
 #     "name" : ["Giesenweg", "Laagjes"],
 #      "lon" : [4.4279192, 4.5230457], 
@@ -14,3 +16,5 @@ import osmnx as ox
 
 G = snx.load_graph("Rotterdam_totale_netwerk")
 snx.add_penalties(G)
+
+print(G)
