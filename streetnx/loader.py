@@ -1,6 +1,7 @@
 import osmnx as ox
 import networkx as nx
 import pandas as pd
+import numpy as np
 
 from streetnx import toolbox
 from streetnx import utils as graph_utils
@@ -60,12 +61,7 @@ def download_graph(
 
     assert len(city_names) > 0, "At least one city should be specified."
 
-    ox.config(
-        log_file=True,
-        log_console=True,
-        use_cache=True,
-        useful_tags_way=useful_tags_way
-    )
+    ox.settings.useful_tags_way=useful_tags_way
 
     ox_utils.log("Start downloading the graph.")
     G = None
@@ -135,14 +131,23 @@ def load_graph(name):
 def load_required_edges(G):
     # TODO create function to download required edges from ARCGIS?
 
-    required_edges = [
-        (u,v,k)
-        for u,v,k,d 
-        in G.edges(keys=True, data=True) 
-        if d['highway'] in ["primary", "projected_footway"] # , "primary_link", "secondary", "secondary_link"
-    ]
+    nodes, edges = ox.utils_graph.graph_to_gdfs(G)
 
-    return required_edges[-50:]
+    mask = np.isin(edges["highway"], ["primary", "projected_footway"])
+    required_edges_df = edges.loc[mask, ["lanes", "length", "lanes:forward", "lanes:backward", "turn:lanes", "speed_kph", "oneway", "geometry"]]
+
+    for col in required_edges_df.columns:
+        if col == "geometry":
+            xy = [value.coords.xy for value in required_edges_df[col]]
+            average_xy = [(np.average(x), np.average(y)) for x,y in xy]
+            required_edges_df[col] = average_xy
+        # check if any of the values within the column col are not a list
+        elif not required_edges_df[col].apply(lambda x: not isinstance(x, list)).all():
+            required_edges_df[col] = [[value] if not isinstance(value, list) else value for value in required_edges_df[col]]
+
+    ox_utils.log(f"Loaded {len(required_edges_df)} required edges.")
+
+    return required_edges_df
 
 def save_shortest_paths(distances, paths, name: str):
     distances.to_parquet(f"./data/" + name + "_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
@@ -154,5 +159,7 @@ def load_shortest_paths(name: str):
     return distances, paths
 
 def save_route(route_map, name: str):
+    ox_utils.log(f"Saving plotted solution to ./data/" + name + ".html")
+
     route_map.save(outfile= "./data/" + name + ".html")
 

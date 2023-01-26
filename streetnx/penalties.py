@@ -7,7 +7,7 @@ from streetnx.turn import Turn, TurnType
 
 def add_penalties(G, turn_angle_threshold = 40):
 
-    ox_utils.log("Start adding penalties to the graph.")
+    ox_utils.log("Start turn penalties assignment.")
 
     G.turns = {}
     G.gamma = get_average_edge_duration(G)
@@ -81,7 +81,7 @@ def add_penalties(G, turn_angle_threshold = 40):
         # Assign the type of turns to all turns
         assign_turn_types(G, straights=straights, turns=turns, turn_angle_threshold=turn_angle_threshold)
 
-    ox_utils.log("Start adding penalties to the graph.")
+    ox_utils.log("Finished turn penalties assignment.")
 
 def get_average_edge_duration(G):
     total_duration = sum([get_travel_time(G, edge, 100) for edge in G.edges(keys=True) if not is_nan(get_travel_time(G, edge, 100))])

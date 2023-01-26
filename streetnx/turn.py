@@ -1,10 +1,10 @@
 from enum import Enum
 
 class TurnType(Enum):
-    STRAIGHT = 0
+    STRAIGHT = 1
     ROUNDABOUT = 0
-    RIGHT = 1
-    LEFT = 3
+    RIGHT = 3
+    LEFT = 10
     UTURN = float('inf')
     INFEASIBLE = float('inf')
 

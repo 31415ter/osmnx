@@ -1,7 +1,8 @@
 import osmnx as ox
 import math
 
-from osmnx import utils
+from osmnx import utils as ox_utils
+
 
 # set lane count of the edge using the assumptions when lanes are not specified,
 # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
@@ -95,14 +96,14 @@ def get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold):
         # If the number of outgoing edges from the target node of the considered edge is 1,
         # check if the outgoing edge is equal to the considered edge or its angle is smaller than 40
         if len(G.out_edges(edge[1])) == 1:
-            out_edge = list(G.out_edges(edge[1], data = True))[0]
+            out_edge = list(G.out_edges(edge[1], keys = True))[0]
             if abs(ox.utils_geo.angle(G, edge, out_edge)) < angle_treshold:
                 edges_to_remove += [edge]
             
         # If the number of incoming edges from the starting node of the considered edge is 1,
         # check if the incoming edge is equal to the considered edge or its angle is smaller than 40
         if len(G.in_edges(edge[0])) == 1:
-            in_edge = list(G.in_edges(edge[0], data = True))[0]
+            in_edge = list(G.in_edges(edge[0], keys = True))[0]
             if abs(ox.utils_geo.angle(G, in_edge, edge)) < angle_treshold:
                 edges_to_remove += [edge]
 
@@ -131,7 +132,7 @@ def remove_deadends(G, depot_nodes, angle_treshold = 40):
     while not are_lists_empty((nodes, edges)):
         G.remove_nodes_from(nodes)
         G.remove_edges_from(edges)
-        utils.log(f"Removed {len(nodes)} nodes and {len(edges)} edges.")
+        ox_utils.log(f"Removed {len(nodes)} nodes and {len(edges)} edges.")
 
         nodes, edges = get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold)
 
@@ -153,7 +154,7 @@ def are_lists_empty(pair):
     """
     return all(len(lst) == 0 for lst in pair)
 
-def get_travel_time(G, edge, max_speed):
+def get_travel_time(G, edge, max_speed = 100):
     edge_data = G.get_edge_data(*edge)
     if isinstance(edge_data["length"], list):
         distance = 0
@@ -165,3 +166,23 @@ def get_travel_time(G, edge, max_speed):
     
 def is_nan(value):
     return math.isnan(value)
+
+def get_depot_nodes(G):
+    return [n for n,data in G.nodes(data = True) if data['highway'] == 'poi']
+
+def load_depot_indices(G, required_edges):
+    """
+    Returns:
+    List, where the list represents pairs of indices for each depot. 
+    First value in the pair is outgoing and second is incoming index.
+    """
+    depot_nodes = get_depot_nodes(G)
+
+    outgoing_depot_indices = [required_edges.index(edge) for edge in required_edges if edge[0] in depot_nodes]
+    incoming_depot_indices = [required_edges.index(edge) for edge in required_edges if edge[1] in depot_nodes]
+
+    depot_indices = list(zip(outgoing_depot_indices, incoming_depot_indices))
+
+    ox_utils.log(f"Identified {len(depot_nodes)} depot nodes.")
+
+    return depot_indices

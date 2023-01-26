@@ -2,6 +2,7 @@ import time
 import multiprocessing as mp
 import pandas as pd
 
+from osmnx import utils as ox_utils
 from streetnx import utils as street_utils
 from fibheap import *
 
@@ -75,23 +76,23 @@ def construct_paths(G, source_edge: tuple, predecessors: dict, required_edges: l
         paths_nodes.append(nodes_path)
     return paths_coordinates if nodes == False else paths_nodes
 
-def get_shortest_paths(G, required_edges, max_speed = 100):
+def get_shortest_paths(G, required_edges_df, max_speed = 100):
+
+    required_edges = required_edges_df.index.values.tolist()
     depot_nodes = [n for n,d in G.nodes(data=True) if d['highway'] == 'poi']
 
     # setup datastructure to hold results
     distance_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
     path_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
 
-    print("Start calculating distances")
-    print(f"{len(required_edges)}")
+    ox_utils.log("Start calculating distances")
 
     start = time.time()
     args = [(G, edge, required_edges, max_speed) for edge in required_edges]
     with mp.Pool(processes=mp.cpu_count()) as pool:
         results = pool.starmap(dijkstra, args)
     end = time.time()
-    print("-------------------------------------------")
-    print(f"With workers completed in {round(end-start,2)}")
+    ox_utils.log(f"With {mp.cpu_count()} cores, shortest paths completed in {round(end-start,2)}")
 
     for i in range(len(required_edges)):
         mask = (distance_df_workers.index == required_edges[i])
@@ -106,8 +107,7 @@ def get_shortest_paths(G, required_edges, max_speed = 100):
     with mp.Pool(processes=mp.cpu_count()) as pool:
         results = pool.starmap(construct_paths, args)
     end = time.time()
-    print("-------------------------------------------")
-    print(f"With workers completed in {round(end-start,2)}")
+    ox_utils.log(f"With {mp.cpu_count()} cores, paths construction completed in {round(end-start,2)}")
 
     for i in range(len(args)):
         edge = args[i][1]
