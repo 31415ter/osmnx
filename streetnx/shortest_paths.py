@@ -1,5 +1,6 @@
 import time
 import multiprocessing as mp
+from multiprocessing import Manager
 import pandas as pd
 
 from osmnx import utils as ox_utils
@@ -7,7 +8,7 @@ from streetnx import utils as street_utils
 from fibheap import *
 
 # calculate the travel time from the endpoint of the source_edge to the endpoint of the required_edges
-def dijkstra(G, source_edge, required_edges, max_speed = 100):
+def dijkstra(G, source_edge, required_edges, counter, start_time, max_speed = 100):
 
     dur = dict.fromkeys(list(G.edges(keys=True)), float('inf'))
     prev = dict.fromkeys(list(G.edges(keys=True)), None)
@@ -42,14 +43,22 @@ def dijkstra(G, source_edge, required_edges, max_speed = 100):
                 prev[out_edge] = in_edge
                 fheappush(Q, (dur[out_edge], out_edge))
 
-    index = required_edges.index(source_edge)
-    if index % 100 == 0 and index != 0:
-        print(f"Completed asps for {index} of {len(required_edges)}")
+    counter.value += 1
+    if counter.value % 10 == 0:
+        finish_time = time.time()
+        est_finish_time = start_time + (finish_time - start_time) / counter.value * len(required_edges)
+        time_remaining = est_finish_time - finish_time
+
+        hours, remainder = divmod(time_remaining, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        print(f"Completed {counter.value} of {len(required_edges)} shortest paths, est. time remaining: {'{:02d}:{:02d}:{:02d}'.format(int(hours), int(minutes), int(seconds))}")
 
     # return the distances corresponding to the targets and all previous edges
     return {t: dur[t] for t in required_edges}, {t: prev[t] for t in prev}
 
-def construct_paths(G, source_edge: tuple, predecessors: dict, required_edges: list, nodes = True):
+# WHAT DOES nodes VARIABLE DO?
+def construct_paths(G, source_edge: tuple, predecessors: dict, required_edges: list, counter, start_time, nodes = True):
     # predecessors: keys are edges and values are previous edges
     paths_coordinates = []
     paths_nodes = []
@@ -74,6 +83,19 @@ def construct_paths(G, source_edge: tuple, predecessors: dict, required_edges: l
         nodes_path = [source_edge[1]] + nodes_path
         paths_coordinates.append(path)
         paths_nodes.append(nodes_path)
+
+    counter.value += 1
+    if counter.value % 10 == 0:
+        finish_time = time.time()
+        est_finish_time = start_time + (finish_time - start_time) / counter.value * len(required_edges)
+        time_remaining = est_finish_time - finish_time
+
+        hours, remainder = divmod(time_remaining, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        print(f"Completed {counter.value} of {len(required_edges)} construction paths, est. time remaining: {'{:02d}:{:02d}:{:02d}'.format(int(hours), int(minutes), int(seconds))}")
+
+
     return paths_coordinates if nodes == False else paths_nodes
 
 def get_shortest_paths(G, required_edges_df, max_speed = 100):
@@ -86,35 +108,36 @@ def get_shortest_paths(G, required_edges_df, max_speed = 100):
     path_df_workers = pd.DataFrame(index = required_edges, columns = required_edges)
 
     ox_utils.log("Start calculating distances")
-
+    manager = Manager()
+    counter = manager.Value('i', 0)
     start = time.time()
-    args = [(G, edge, required_edges, max_speed) for edge in required_edges]
+    args = [(G, edge, required_edges, counter, start, max_speed) for edge in required_edges]
     with mp.Pool(processes=mp.cpu_count()) as pool:
         results = pool.starmap(dijkstra, args)
     end = time.time()
     ox_utils.log(f"With {mp.cpu_count()} cores, shortest paths completed in {round(end-start,2)}")
 
     for i in range(len(required_edges)):
-        mask = (distance_df_workers.index == required_edges[i])
-        distance_df_workers.loc[mask, results[i][0].keys()] = list(results[i][0].values())
+        distance_df_workers.iloc[i] = list(results[i][0].values())
 
+    counter = manager.Value('i', 0)
     start = time.time()
     args = [
-        (G, edge, results[required_edges.index(edge)][1], required_edges) 
+        (G, edge, results[required_edges.index(edge)][1], required_edges, counter, start) 
         for edge in required_edges 
-        if edge[1] not in depot_nodes # skip over edges that are going into the depot
     ] 
     with mp.Pool(processes=mp.cpu_count()) as pool:
         results = pool.starmap(construct_paths, args)
     end = time.time()
     ox_utils.log(f"With {mp.cpu_count()} cores, paths construction completed in {round(end-start,2)}")
 
-    for i in range(len(args)):
-        edge = args[i][1]
-        mask = (distance_df_workers.index == edge)
-        path_df_workers.loc[mask, :] = results[i]
+    for i in range(len(required_edges)):
+        path_df_workers.iloc[i] = results[i]
 
     distance_df_workers.columns = [str(i) for i in range(len(required_edges))]
     path_df_workers.columns = [str(i) for i in range(len(required_edges))]
+
+    assert path_df_workers.index.values.tolist()  == required_edges_df.index.values.tolist(), "Not matching indices"
+    assert distance_df_workers.index.values.tolist() == required_edges_df.index.values.tolist(), "Not matching indices"
 
     return distance_df_workers, path_df_workers

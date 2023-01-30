@@ -32,6 +32,10 @@ USEFUL_TAGS_WAY = [
     "lanes:backward"
 ]
 
+ALL_ROAD_TYPES = (
+    f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street"]'
+)
+
 CUSTOM_FILTER = (
     f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified"]'
     f'["access"!~"no|private"]'
@@ -55,12 +59,14 @@ HWY_SPEEDS = {
 
 def download_graph(
         city_names,
+        use_custom = True,
         useful_tags_way = USEFUL_TAGS_WAY,
         custom_filter = CUSTOM_FILTER,
     ):
 
     assert len(city_names) > 0, "At least one city should be specified."
 
+    ox_utils.log("Set tags to use.")
     ox.settings.useful_tags_way=useful_tags_way
 
     ox_utils.log("Start downloading the graph.")
@@ -68,7 +74,7 @@ def download_graph(
     for city_name in city_names:
         temp_graph = ox.graph_from_place(
             city_name,
-            custom_filter = custom_filter,
+            custom_filter = custom_filter if use_custom else ALL_ROAD_TYPES,
             buffer_dist=2000,
             truncate_by_edge=True,
             simplify=False
@@ -81,7 +87,8 @@ def download_graph(
 
     return G
 
-def process_graph(
+# TODO WRONG PLACE, IS NOT SAVING OR LOADING ANYTHING...
+def process_deadends(
         G,
         depot_dict,
         hwy_speeds=HWY_SPEEDS
@@ -130,18 +137,22 @@ def load_graph(name):
 
 def load_required_edges(G):
     # TODO create function to download required edges from ARCGIS?
-
     nodes, edges = ox.utils_graph.graph_to_gdfs(G)
 
-    mask = np.isin(edges["highway"], ["primary", "projected_footway"])
+    mask = np.isin(edges["highway"], ["primary", "secondary", "projected_footway"])
     required_edges_df = edges.loc[mask, ["lanes", "length", "lanes:forward", "lanes:backward", "turn:lanes", "speed_kph", "oneway", "geometry"]]
 
     for col in required_edges_df.columns:
+        
+        # Adjust geometry column to be the average x,y coordinates of all available coordinates
+        # the average x,y coordinates are used in the routing optimization
         if col == "geometry":
             xy = [value.coords.xy for value in required_edges_df[col]]
             average_xy = [(np.average(x), np.average(y)) for x,y in xy]
             required_edges_df[col] = average_xy
+        
         # check if any of the values within the column col are not a list
+        # while others are, then put everything into lists
         elif not required_edges_df[col].apply(lambda x: not isinstance(x, list)).all():
             required_edges_df[col] = [[value] if not isinstance(value, list) else value for value in required_edges_df[col]]
 

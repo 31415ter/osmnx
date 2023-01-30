@@ -30,14 +30,6 @@ def encode_distances(distances_df : pd.DataFrame, depots : list):
             set of depot nodes encoded as integersv
     """
     
-    # get outgoing edges from the depots, sorted ascending by depotid
-    outgoing_depot_edges = [edge for edge in distances_df.index if edge[0] in depots]
-    outgoing_depot_edges.sort(key = lambda tup : tup[0])
-
-    # get incoming edges from the depots, sorted ascending by depotid
-    incoming_depot_edges = [edge for edge in distances_df.index if edge[1] in depots]
-    incoming_depot_edges.sort(key = lambda tup : tup[1])
-
     def encode_edges(decode_map, edges):
         """
         Encode a list of edges into a list of integers, and update the decode map.
@@ -202,7 +194,7 @@ if __name__ == '__main__':
 
     ox.settings.log_file=True
     ox.settings.log_console=True
-    ox.settings.use_cache=True
+    ox.settings.use_cache=False
 
     # depots = {
     #     "name" : ["Giesenweg", "Laagjes"],
@@ -213,31 +205,35 @@ if __name__ == '__main__':
 
     depots = {
         "name" : ["Villa Maria"],
-        "lon" : [4.3575764],
-        "lat" : [52.0197770],
+         "lon" : [4.3575781], 
+         "lat" : [52.0197586], 
         "amenity" : ["depot"]
     }
+
+
+    use_custom = False
+    #cities = ["Rotterdam", "Hoogvliet", "Schiedam"]
     cities = ["Delft"]
     name = "_".join(cities)
 
-    # ## Downloading graph and processing deadends
-    # G = snx.download_graph(cities)
-    # G = snx.process_graph(G, depots)
-    # snx.save_graph(G, name)
+    ### Downloading graph and processing deadends
+    # G = snx.download_graph(cities, use_custom = use_custom)
+    # G = snx.process_deadends(G, depots)
+    # snx.save_graph(G, name + ("_road_network" if not use_custom else "_custom_network"))
 
-
-    ### Loading graph and saving distances
-    G = snx.load_graph(name)
+    # ### Loading graph and saving distances
+    # G = snx.load_graph(name + ("_road_network" if not use_custom else "_custom_network"))
     # snx.add_penalties(G)
-    required_edges_df = snx.load_required_edges(G)
+    # required_edges_df = snx.load_required_edges(G)
     # distances, paths = snx.get_shortest_paths(G, required_edges_df=required_edges_df, max_speed=100)
-    # snx.save_shortest_paths(distances, paths, name)
+    # snx.save_shortest_paths(distances, paths, name + "_required")
 
-    # LOAD DISTANCES, REQUIRED_EDGES
-    import pandas as pd
+    # # LOAD DISTANCES, REQUIRED_EDGES
+    # import pandas as pd
 
-    G = snx.load_graph(name)
-    distances_df, paths_df = snx.load_shortest_paths(name)
+    G = snx.load_graph(name + ("_road_network" if not use_custom else "_custom_network"))
+    required_edges_df = snx.load_required_edges(G)
+    distances_df, paths_df = snx.load_shortest_paths(name + "_required")
     depots_list = nsx_utils.get_depot_nodes(G)
 
     (
@@ -261,10 +257,64 @@ if __name__ == '__main__':
             if (lane['gritted_lanes'] == 1 and lanes[lane['reverse']]['gritted_lanes'] == 3):
                 to_remove.add(i)
 
+    depot_map = {}
+    for depot in depots_list:
+        depot_map[depot] = {
+            'outgoing': None,
+            'incoming': None
+        }
 
+    # variable that contains all travel times in seconds between all edges
+    for i in range(len(lanes)):
+        value = lanes[i]
+        # get edge from edge_df corresponding to the edge_ID in the value
+        edge_index = required_edges_df.index[value['edge_ID']]
+        if edge_index[0] in depots_list:
+            depot_map[edge_index[0]]['outgoing'] = i
+            print(f"Arc {i} is a depot arc")
+        elif edge_index[1] in depots_list:
+            depot_map[edge_index[1]]['incoming'] = i
+            print(f"Arc {i} is a depot arc")
+
+    # write each row of distances to a txt file
+    with open("./data/distances.txt", "w") as f:
+        f.write(str(len(distances)) + "\n")
+        for row in distances:
+            line = str(row)
+            line = line.replace("[", "")
+            line = line.replace("]", "")
+            f.write(line)
+            f.write("\n")
+
+        # encoded depots to json file
+    with open('./data/depots.txt', 'w') as f:
+        f.write(str(len(depot_map)) + "\n")
+        for depot in depot_map:
+            value = depot_map[depot]
+            f.write(
+                str(depot) + " " 
+                + str(value['outgoing']) + " " 
+                + str(value['incoming']) 
+                + "\n"
+            )
+                
+        # reverse edge map to json file
+    with open('./data/lanes.txt', 'w') as f:
+        f.write(str(len(lanes)) + "\n")
+        for value in lanes.values():
+            f.write(
+                str(value["edge_ID"]) + " "
+                + str(value["gritted_lanes"]) + " "
+                + str(value["length"]) + " "
+                + str(value["travel_time"]) +  " "
+                + str(value["x"]) + " "
+                + str(value["y"]) + " "
+                + str(value["reverse"])
+                + "\n"
+            )
 
     # ### Visualizing a solution
-    distances, paths = snx.load_shortest_paths(name)
+    # distances, paths = snx.load_shortest_paths(name)
     # depot_indices = nsx_utils.load_depot_indices(G, required_edges)
     # route_map = snx.plot_route(G, solution=[35, 120, 66], depot_indices=depot_indices, paths=paths)
     # snx.save_route(route_map, name)

@@ -1,7 +1,7 @@
 """Expose most common parts of public API directly in `streetnx.` namespace."""
 
 from .loader import download_graph
-from .loader import process_graph
+from .loader import process_deadends
 from .loader import save_graph
 from .loader import load_graph
 from .loader import load_required_edges
