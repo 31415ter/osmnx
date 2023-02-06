@@ -7,7 +7,7 @@ import networkx as nx
 import osmnx as ox
 import geopandas as gpd
 
-from streetnx import toolbox 
+from streetnx import poi_insertion 
 from osmnx import utils
 from fibheap import *
 from shapely.geometry import LineString
@@ -80,7 +80,7 @@ hwy_speeds = {
 G = ox.add_edge_speeds(G, hwy_speeds, fallback = 15)
 G = ox.simplify_graph(G, allow_lanes_diff=True)
 
-G = toolbox.graph_with_pois_inserted(G, city, tags)
+G = poi_insertion.graph_with_pois_inserted(G, city, tags)
 
 utils.log("Begin removing deadends...")
 removed_nodes_list = []

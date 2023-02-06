@@ -1,7 +1,7 @@
 import osmnx as ox
 
 from osmnx import utils as ox_utils
-from streetnx.utils import get_travel_time, is_nan
+from streetnx import utils as snx_utils
 from streetnx.highway_type import HighwayType
 from streetnx.turn import Turn, TurnType
 
@@ -10,7 +10,8 @@ def add_penalties(G, turn_angle_threshold = 40):
     ox_utils.log("Start turn penalties assignment.")
 
     G.turns = {}
-    G.gamma = get_average_edge_duration(G)
+    G.gamma = snx_utils.get_average_edge_duration(G)
+    ox_utils.log(f"Turn penalty gamma = {G.gamma}.")
 
     # iterate over each node (i.e. intersection) in the graph and
     # check each adjacent pair of edges (i.e. road) to that node
@@ -38,6 +39,8 @@ def add_penalties(G, turn_angle_threshold = 40):
                 turn = get_turn(G, in_edge=in_edge, out_edge=out_edge)
                 turns.append(turn)
 
+                straight
+
                 # A situation can occur where a node has multiple outgoing edges of various highway types.
                 # Then the outgoing edges which matches the type of the incoming edge the most is considered
                 # to be a potential better candidates for the straight road originating from the incoming edge
@@ -49,6 +52,8 @@ def add_penalties(G, turn_angle_threshold = 40):
                     out_edge_data=out_edge_data,
                     turn_angle_threshold=turn_angle_threshold
                 )
+
+                straight
 
             # Add the straight edge to all outgoing_straights present at the node (intersection).
             # As multiple pairs of incoming and outgoing edges could have a straight to the same outgoing edge. 
@@ -82,11 +87,6 @@ def add_penalties(G, turn_angle_threshold = 40):
         assign_turn_types(G, straights=straights, turns=turns, turn_angle_threshold=turn_angle_threshold)
 
     ox_utils.log("Finished turn penalties assignment.")
-
-def get_average_edge_duration(G):
-    total_duration = sum([get_travel_time(G, edge, 100) for edge in G.edges(keys=True) if not is_nan(get_travel_time(G, edge, 100))])
-    num_streets = G.number_of_edges()
-    return total_duration / num_streets
 
 def get_turn(G, in_edge, out_edge):
     angle = ox.utils_geo.angle(G, in_edge, out_edge) 
@@ -137,6 +137,8 @@ def get_straight_turn(G, straight, turn, in_edge_data, out_edge_data, turn_angle
             return turn
         elif abs(180 - turn.angle) == abs(180 - straight.angle):
             raise ValueError(f"This should never happen.")
+        else:
+            return turn
     # Else, the straight road is roughly the same type as the incoming road
     else:       
         # if the difference between road types is greater than 1, then this is not a potential straight road.
@@ -148,6 +150,8 @@ def get_straight_turn(G, straight, turn, in_edge_data, out_edge_data, turn_angle
             return turn            
         elif abs(180 - turn.angle) == abs(180 - straight.angle):
             raise ValueError(f"This should never happen.")   
+        else:
+            return straight
         
 def best_fitting_straight(G, outgoing_edge, outgoing_straights):
     """
@@ -217,8 +221,12 @@ def assign_turn_types(G, straights, turns, turn_angle_threshold):
         turn_in_edge_data = G.get_edge_data(*road_turn.in_edge)
         turn_out_edge_data = G.get_edge_data(*road_turn.out_edge)
 
-        # Check if the turn is onto, or leaving a roundabout.
-        if "junction" in turn_in_edge_data and bool({"circular", "roundabout"} & {turn_in_edge_data["junction"][0]}):                
+        # check if the outgoing edge is part of a roundabout
+        if 'roundabout' in turn_out_edge_data['junction'] or 'circular' in turn_out_edge_data['junction']:
+            road_turn.set_type(TurnType.ROUNDABOUT)
+
+        # check if the outgoing edge is part of a roundabout
+        elif 'roundabout' in turn_in_edge_data['junction'] or 'circular' in turn_in_edge_data['junction']:
             road_turn.set_type(TurnType.ROUNDABOUT)
 
         # Check if the turn is a u-turn, which is prohibited

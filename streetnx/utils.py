@@ -3,7 +3,6 @@ import math
 
 from osmnx import utils as ox_utils
 
-
 # set lane count of the edge using the assumptions when lanes are not specified,
 # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
 # a roundabout is assumed to have 1 lane, if not specified otherwise
@@ -21,7 +20,14 @@ def get_lane_count(edge):
         if edge["lanes"] == edge["lanes"]:
             # if edge is not oneway, lanes are divided equally between both directions
             if edge["oneway"] not in {"yes", True, 1, "true", "1"}:
-                lane_count = int(int(edge["lanes"]) / 2)
+                lane_count = math.ceil(int(edge["lanes"]) / 2)
+                if (
+                        (int(edge["lanes"]) != 1)
+                        and (int(edge["lanes"]) % 2 != 0) 
+                        and is_nan(edge['lanes:backward']) 
+                        and is_nan(edge['lanes:forward'])
+                    ):
+                    lane_count = math.floor(int(edge["lanes"]) / 2)
             else:
                 lane_count = int(edge["lanes"])
         else:
@@ -49,6 +55,7 @@ def get_lane_count(edge):
             lane_count = int(edge["lanes"]) - int(lanes_backward)     
 
     return lane_count
+
 
 def get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold):
 
@@ -114,6 +121,7 @@ def get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold):
 
     return (nodes_to_remove, edges_to_remove)
 
+
 def remove_deadends(G, depot_nodes, angle_treshold = 40):
     """
     This function removes dead-end nodes and edges from the input graph G,
@@ -136,6 +144,7 @@ def remove_deadends(G, depot_nodes, angle_treshold = 40):
 
         nodes, edges = get_deadend_nodes_and_edges(G, depot_nodes, angle_treshold)
 
+
 def are_lists_empty(pair):
     """
     Check if the lists in a pair data structure (i.e, a tuple of two lists) are both empty.
@@ -154,7 +163,8 @@ def are_lists_empty(pair):
     """
     return all(len(lst) == 0 for lst in pair)
 
-def get_travel_time(G, edge, max_speed = 100):
+
+def get_edge_travel_time(G, edge, max_speed = 100):
     edge_data = G.get_edge_data(*edge)
     if isinstance(edge_data["length"], list):
         distance = 0
@@ -164,11 +174,39 @@ def get_travel_time(G, edge, max_speed = 100):
     else:
         return edge_data["length"] / (edge_data["speed_kph"] / 3.6)
     
+
+def get_edge_travel_times(edge_df, max_speed=100, precession=2):
+    travel_times = []
+    for length, speed in zip(edge_df['length'], edge_df['speed_kph']):
+        travel_time = 0
+        for i in range(len(length)):
+            if speed[i] == None: continue
+            travel_time += round(length[i] / (min(max_speed, speed[i]) / 3.6), precession)
+        travel_times.append(travel_time)
+    return travel_times
+
+
+def get_edge_lengths(edge_df, precession=2):
+    lengths = []
+    for edge in edge_df['length']:
+        length = 0
+        for i in range(len(edge)):
+            length += round(float(edge[i]), precession)
+        lengths.append(length)
+    return lengths
+
+
 def is_nan(value):
+    if isinstance(value, str):
+        return False
     return math.isnan(value)
 
+
 def get_depot_nodes(G):
-    return [n for n,data in G.nodes(data = True) if data['highway'] == 'poi']
+    depots = [n for n,data in G.nodes(data = True) if data['highway'] == 'poi']
+    ox_utils.log(f"Loaded {len(depots)} depot(s).")
+    return depots
+
 
 def load_depot_indices(G, required_edges):
     """
@@ -178,11 +216,24 @@ def load_depot_indices(G, required_edges):
     """
     depot_nodes = get_depot_nodes(G)
 
-    outgoing_depot_indices = [required_edges.index(edge) for edge in required_edges if edge[0] in depot_nodes]
-    incoming_depot_indices = [required_edges.index(edge) for edge in required_edges if edge[1] in depot_nodes]
+    depot_dict = dict()
 
-    depot_indices = list(zip(outgoing_depot_indices, incoming_depot_indices))
+    for depot in depot_nodes:
+        outgoing_depot_index = [required_edges.index.values.tolist().index(edge) for edge in required_edges.index.values.tolist() if edge[0] == depot][0]
+        incoming_depot_index = [required_edges.index.values.tolist().index(edge) for edge in required_edges.index.values.tolist() if edge[1] == depot][0]
+        
+        index_dict = dict()
+        index_dict['out'] = outgoing_depot_index
+        index_dict['in'] = incoming_depot_index
+        depot_dict[depot] = index_dict
 
     ox_utils.log(f"Identified {len(depot_nodes)} depot nodes.")
 
-    return depot_indices
+    return depot_dict
+
+
+def get_average_edge_duration(G):
+    total_duration = sum([get_edge_travel_time(G, edge, 100) for edge in G.edges(keys=True) if not is_nan(get_edge_travel_time(G, edge, 100))])
+    num_streets = G.number_of_edges()
+    return total_duration / num_streets
+

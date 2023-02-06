@@ -5,14 +5,18 @@ import folium.plugins as plugins
 from streetnx import utils as nsx_utils
 from osmnx import utils as ox_utils
 
-def plot_route(G, solution, depot_indices, paths, route_map=None):
+def plot_route(G, solution, depot_dict, paths, route_map=None):
 
     ox_utils.log(f"Plotting solution {solution}")
 
     edges_ids = paths.index
     paths = paths.values
 
-    from_depot_arcs = [edges_ids[depot_indices[0][0]][0]] + paths[depot_indices[0][0], solution[0]].tolist()
+    # retrieve the depot node from the solution
+    depot = solution[0]
+    solution = solution[1:]
+
+    from_depot_arcs = [depot] + paths[depot_dict[depot]['out'], solution[0]].tolist()
     route_map = ox.plot_route_folium(G, from_depot_arcs, color='#ffff00', opacity=1, route_map=route_map) # geel, heenweg
     for i in range(0, len(solution)):
 
@@ -49,7 +53,11 @@ def plot_route(G, solution, depot_indices, paths, route_map=None):
             route_next_arc = paths[solution[i], solution[i+1]].tolist()
             route_map = ox.plot_route_folium(G, route_next_arc, color='#0000FF', opacity=1, route_map=route_map) # blue
 
-    to_depot_arcs = paths[solution[-1], depot_indices[0][1]].tolist()
+    to_depot_arcs = paths[solution[-1], depot_dict[depot]['in']].tolist() + [depot]
     if len(to_depot_arcs) > 1: route_map = ox.plot_route_folium(G, to_depot_arcs, color='#fb00ff', opacity=1, route_map=route_map) # roze, terugweg
 
     return route_map
+
+
+def ar3_route(G, solution, depot_indices, path):
+    print("")

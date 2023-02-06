@@ -1,11 +1,14 @@
+import os
+
 import osmnx as ox
 import networkx as nx
 import pandas as pd
 import numpy as np
 
-from streetnx import toolbox
+from streetnx import poi_insertion
 from streetnx import utils as graph_utils
 from osmnx import utils as ox_utils
+from osmnx import geocoder
 
 FILE_PATH = "./data/"
 
@@ -34,6 +37,7 @@ USEFUL_TAGS_WAY = [
 
 ALL_ROAD_TYPES = (
     f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street"]'
+    f'["access"!~"no|private"]'
 )
 
 CUSTOM_FILTER = (
@@ -99,7 +103,7 @@ def process_deadends(
     G = ox.add_edge_speeds(G, hwy_speeds, fallback = 30)
     ox_utils.log("Added edge speeds to the graph.")
 
-    G = toolbox.graph_inserted_pois(G, depot_dict)
+    G = poi_insertion.graph_inserted_pois(G, depot_dict)
     ox_utils.log("Finished inserting depots into the graph.")
 
     lane_counts = {
@@ -109,6 +113,10 @@ def process_deadends(
     }
     nx.set_edge_attributes(G, name="lanes", values=lane_counts)
     ox_utils.log("Set lane count of edges.")
+
+    empty_lane_edges = [edge for edge in G.edges(keys = True, data = True) if edge[3]['lanes'] <= 0]
+    G.remove_edges_from(empty_lane_edges)
+    ox_utils.log(f"Removed {len(empty_lane_edges)} lanes with empty lanes.")
         
     G = ox.simplify_graph(G, allow_lanes_diff=False)
 
@@ -135,12 +143,47 @@ def load_graph(name):
     ox_utils.log("Finished reading the graph.")
     return G
 
-def load_required_edges(G):
-    # TODO create function to download required edges from ARCGIS?
+def load_required_edges(G, required_cities):
     nodes, edges = ox.utils_graph.graph_to_gdfs(G)
 
-    mask = np.isin(edges["highway"], ["primary", "secondary", "projected_footway"])
+    def check_highway(value):
+        if isinstance(value, list):
+            for item in value:
+                if (
+                    'primary' in item 
+                    or 'secondary' in item
+                    or 'projected_footway' in item
+                ):
+                    return True
+            return False
+        else:
+            if (
+                'primary' in value 
+                or 'secondary' in value
+                or 'projected_footway' in value
+            ): return True
+            else: return False
+
+    mask = edges['highway'].apply(check_highway)
     required_edges_df = edges.loc[mask, ["lanes", "length", "lanes:forward", "lanes:backward", "turn:lanes", "speed_kph", "oneway", "geometry"]]
+
+    if required_cities != None and len(required_cities) > 0:
+        union_polygon = None
+        for city in required_cities:
+            city_gdf = geocoder.geocode_to_gdf(
+                city, which_result=None, buffer_dist=0
+            )
+            city_polygon = city_gdf["geometry"].unary_union
+
+            if not union_polygon:
+                union_polygon = city_polygon
+            else:
+                union_polygon = union_polygon.union(city_polygon)
+		        
+        mask = required_edges_df['geometry'].apply(lambda x: x.within(union_polygon))
+        required_edges_df = required_edges_df.loc[mask]
+
+
 
     for col in required_edges_df.columns:
         
@@ -160,13 +203,38 @@ def load_required_edges(G):
 
     return required_edges_df
 
-def save_shortest_paths(distances, paths, name: str):
-    distances.to_parquet(f"./data/" + name + "_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
-    paths.to_parquet(f"./data/" + name + "_paths.parquet.gzip", engine='pyarrow', compression='GZIP')
+def save_shortest_paths(name: str):
+    path = './data/'
+
+    files = [f for f in os.listdir(path) if f.endswith('.gzip') and "distances" in f and f.startswith(name)]
+    files.sort(key=lambda x: os.path.getctime(os.path.join(path, x)))
+    df_list = []
+    for file in files:
+        file_path = os.path.join(path, file)
+        df = pd.read_parquet(file_path)
+        df_list.append(df)
+
+    result = pd.concat(df_list, axis=0)
+    result.to_parquet("./data/" + name + f"_distances.parquet.gzip", engine='pyarrow', compression='GZIP')
+
+    files = [f for f in os.listdir(path) if f.endswith('.gzip') and "predecessors" in f]
+    files.sort(key=lambda x: os.path.getctime(os.path.join(path, x)))
+    df_list = []
+    for file in files:
+        file_path = os.path.join(path, file)
+        df = pd.read_parquet(file_path)
+        df_list.append(df)
+
+    result = pd.concat(df_list, axis=0)
+    result.to_parquet("./data/" + name + f"_predecessors.parquet.gzip", engine='pyarrow', compression='GZIP')
+
 
 def load_shortest_paths(name: str):
     distances = pd.read_parquet(f"./data/" + name + "_distances.parquet.gzip", engine='pyarrow')
-    paths = pd.read_parquet(f"./data/" + name + "_paths.parquet.gzip", engine='pyarrow')
+    paths = pd.read_parquet(f"./data/" + name + "_predecessors.parquet.gzip", engine='pyarrow')
+
+    ox_utils.log(f"Loaded {len(distances)} x {len(distances)} distances and paths matrix.")
+
     return distances, paths
 
 def save_route(route_map, name: str):
