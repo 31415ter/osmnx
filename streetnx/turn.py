@@ -4,7 +4,7 @@ class TurnType(Enum):
     STRAIGHT = 1
     ROUNDABOUT = 0
     RIGHT = 3
-    LEFT = 10
+    LEFT = 5
     UTURN = float('inf')
     INFEASIBLE = float('inf')
 

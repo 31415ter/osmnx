@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 import math
 
 from streetnx import utils as snx_utils
@@ -11,11 +12,11 @@ def save_lanes(name, required_edges_df, distances_df, depots_list):
         encoded_depots
     ) = encode_distances(distances_df, depots_list)
 
-    edge_lengths = snx_utils.get_edge_travel_times(required_edges_df)
-    edge_travel_time = snx_utils.get_edge_lengths(required_edges_df)
+    edge_travel_time = snx_utils.get_edge_travel_times(required_edges_df)
+    edge_lengths = snx_utils.get_edge_lengths(required_edges_df)
     edge_lanes = get_lanes(required_edges_df)
     reverse_edge_map = map_reverses(required_edges_df, edge_lengths, depots_list)
-    lanes = create_lanes(edge_lanes, edge_lengths, edge_travel_time, reverse_edge_map, required_edges_df["geometry"].values)
+    lanes = create_lanes(edge_lanes, edge_lengths, edge_travel_time, reverse_edge_map, required_edges_df["average_geometry"].values)
 
     to_remove = set()
 
@@ -221,8 +222,8 @@ def create_lanes(
                 "gritted_lanes": min(temp_lanes, parallel_lanes),
                 "length": edge_lengths[i],
                 "travel_time": edge_travel_time[i],
-                "x": edge_coords[i][0],
-                "y": edge_coords[i][1],
+                "x": float(re.findall(r'\d+\.\d+', edge_coords[i])[0]),
+                "y": float(re.findall(r'\d+\.\d+', edge_coords[i])[1]),
                 "reverse": None
             }
             temp_lanes -= parallel_lanes

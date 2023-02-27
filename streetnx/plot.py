@@ -29,28 +29,30 @@ def plot_route(G, solution, depot_dict, paths, route_map=None):
         end = G.nodes[service_arc[1]]
         end_x, end_y = end['x'], end['y']
 
-        folium.Marker(
-            location=[start_y, start_x], popup=None,
-            icon=plugins.BeautifyIcon(
-                             icon="arrow-down", icon_shape="marker",
-                             number=str(i) + "\'",
-                             border_color= "#757575",
-                             background_color="#FFFFFF"
-                         )
-        ).add_to(route_map)
+        # folium.Marker(
+        #     location=[start_y, start_x], popup=None,
+        #     icon=plugins.BeautifyIcon(
+        #                      icon="arrow-down", icon_shape="marker",
+        #                      number=str(i) + "\'",
+        #                      border_color= "#757575",
+        #                      background_color="#FFFFFF"
+        #                  )
+        # ).add_to(route_map)
 
-        folium.Marker(
-            location=[end_y, end_x], popup=None,
-            icon=plugins.BeautifyIcon(
-                             icon="arrow-down", icon_shape="marker",
-                             number=i,
-                             border_color= "#757575",
-                             background_color="#FFFFFF"
-                         )
-        ).add_to(route_map)
+        # folium.Marker(
+        #     location=[end_y, end_x], popup=None,
+        #     icon=plugins.BeautifyIcon(
+        #                      icon="arrow-down", icon_shape="marker",
+        #                      number=i,
+        #                      border_color= "#757575",
+        #                      background_color="#FFFFFF"
+        #                  )
+        # ).add_to(route_map)
         
         if i+1 < len(solution):
             route_next_arc = paths[solution[i], solution[i+1]].tolist()
+            if len(route_next_arc) == 1:
+                continue 
             route_map = ox.plot_route_folium(G, route_next_arc, color='#0000FF', opacity=1, route_map=route_map) # blue
 
     to_depot_arcs = paths[solution[-1], depot_dict[depot]['in']].tolist() + [depot]

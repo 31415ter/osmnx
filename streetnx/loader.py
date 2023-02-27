@@ -143,7 +143,7 @@ def load_graph(name):
     ox_utils.log("Finished reading the graph.")
     return G
 
-def load_required_edges(G, required_cities):
+def load_required_edges(G, required_cities, buffer_dist = 500):
     nodes, edges = ox.utils_graph.graph_to_gdfs(G)
 
     def check_highway(value):
@@ -171,7 +171,7 @@ def load_required_edges(G, required_cities):
         union_polygon = None
         for city in required_cities:
             city_gdf = geocoder.geocode_to_gdf(
-                city, which_result=None, buffer_dist=0
+                city, which_result=None, buffer_dist=buffer_dist
             )
             city_polygon = city_gdf["geometry"].unary_union
 
@@ -183,8 +183,6 @@ def load_required_edges(G, required_cities):
         mask = required_edges_df['geometry'].apply(lambda x: x.within(union_polygon))
         required_edges_df = required_edges_df.loc[mask]
 
-
-
     for col in required_edges_df.columns:
         
         # Adjust geometry column to be the average x,y coordinates of all available coordinates
@@ -192,7 +190,7 @@ def load_required_edges(G, required_cities):
         if col == "geometry":
             xy = [value.coords.xy for value in required_edges_df[col]]
             average_xy = [(np.average(x), np.average(y)) for x,y in xy]
-            required_edges_df[col] = average_xy
+            required_edges_df['average_geometry'] = average_xy
         
         # check if any of the values within the column col are not a list
         # while others are, then put everything into lists
