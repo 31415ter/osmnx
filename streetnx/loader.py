@@ -4,6 +4,7 @@ import osmnx as ox
 import networkx as nx
 import pandas as pd
 import numpy as np
+import streetnx as snx
 
 from streetnx import poi_insertion
 from streetnx import utils as graph_utils
@@ -117,8 +118,11 @@ def process_deadends(
     empty_lane_edges = [edge for edge in G.edges(keys = True, data = True) if edge[3]['lanes'] <= 0]
     G.remove_edges_from(empty_lane_edges)
     ox_utils.log(f"Removed {len(empty_lane_edges)} lanes with empty lanes.")
-        
+    
+
     G = ox.simplify_graph(G, allow_lanes_diff=False)
+
+    #G = snx.process_turn_lanes(G, 3377240345) # TODO PROGRAM THIS.
 
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
     depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
@@ -146,25 +150,20 @@ def load_graph(name):
 def load_required_edges(G, required_cities, buffer_dist = 500):
     nodes, edges = ox.utils_graph.graph_to_gdfs(G)
 
-    def check_highway(value):
+    def check_highway(value, highway_types):
         if isinstance(value, list):
             for item in value:
-                if (
-                    'primary' in item 
-                    or 'secondary' in item
-                    or 'projected_footway' in item
-                ):
-                    return True
+                for type in highway_types:
+                    if type in item:
+                        return True
             return False
         else:
-            if (
-                'primary' in value 
-                or 'secondary' in value
-                or 'projected_footway' in value
-            ): return True
+            for type in highway_types:
+                if type in value:
+                    return True
             else: return False
 
-    mask = edges['highway'].apply(check_highway)
+    mask = edges['highway'].apply(check_highway, highway_types = ["projected_footway"])
     required_edges_df = edges.loc[mask, ["lanes", "length", "lanes:forward", "lanes:backward", "turn:lanes", "speed_kph", "oneway", "geometry"]]
 
     if required_cities != None and len(required_cities) > 0:
@@ -180,8 +179,13 @@ def load_required_edges(G, required_cities, buffer_dist = 500):
             else:
                 union_polygon = union_polygon.union(city_polygon)
 		        
-        mask = required_edges_df['geometry'].apply(lambda x: x.within(union_polygon))
-        required_edges_df = required_edges_df.loc[mask]
+        mask = edges['geometry'].apply(lambda x: x.within(union_polygon))
+        edges = edges.loc[mask]
+
+        mask = edges.loc[mask, 'highway'].apply(check_highway, highway_types = ["unclassified"])
+        temp_required_edges_df = edges.loc[mask, ["lanes", "length", "lanes:forward", "lanes:backward", "turn:lanes", "speed_kph", "oneway", "geometry"]]
+        required_edges_df = pd.concat([required_edges_df, temp_required_edges_df])
+        required_edges_df = required_edges_df[~required_edges_df.index.duplicated(keep='first')]
 
     for col in required_edges_df.columns:
         

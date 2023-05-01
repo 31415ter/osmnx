@@ -314,7 +314,10 @@ def connect_poi(pois, nodes, edges, key_col=None, projected_footways = False, no
     print("Updating internal edges...")
     # split
     line_pps_dict = {k: MultiPoint(list(v)) for k, v in pois_meter.groupby(['kne_idx'])['pp']}
-    new_lines = [split_line(edges_meter['geometry'][idx], pps) for idx, pps in line_pps_dict.items()]  # bit slow
+    new_lines = [
+        split_line(edges_meter['geometry'][idx], pps) 
+        for idx, pps in line_pps_dict.items()
+        ]  # bit slow
     edges_meter, _ = update_edges(edges_meter, new_lines, replace=True)
 
     ## STAGE 2: connection

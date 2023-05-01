@@ -246,3 +246,18 @@ def create_lanes(
             lanes_map[lane_u_ID]["reverse"] = lane_v_ID
 
     return lanes_map
+
+
+
+# def process_turn_lanes(G, node: int, parallel_gritting = 3):
+
+#     print(node)
+
+#     in_edges = G.in_edges(node)
+#     out_edges = G.out_edges(node)
+
+#     for in_edge in in_edges:
+#         for out_edge in out_edges:
+
+
+#     return G
