@@ -175,7 +175,7 @@ def get_edge_travel_time(G, edge, max_speed = 100):
         return edge_data["length"] / (edge_data["speed_kph"] / 3.6)
     
 
-def get_edge_travel_times(edge_df, max_speed=100, precession=2):
+def get_edge_travel_times(edge_df, max_speed=100, precession=1):
     travel_times = []
     for length, speed in zip(edge_df['length'], edge_df['speed_kph']):
         travel_time = 0
@@ -186,7 +186,7 @@ def get_edge_travel_times(edge_df, max_speed=100, precession=2):
     return travel_times
 
 
-def get_edge_lengths(edge_df, precession=2):
+def get_edge_lengths(edge_df, precession=1):
     lengths = []
     for edge in edge_df['length']:
         length = 0

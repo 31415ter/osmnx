@@ -41,11 +41,6 @@ ALL_ROAD_TYPES = (
     f'["access"!~"no|private"]'
 )
 
-CUSTOM_FILTER = (
-    f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified"]'
-    f'["access"!~"no|private"]'
-)
-
 HWY_SPEEDS = {  
 'motorway': 100,
 'motorway_link': 100,
@@ -59,14 +54,14 @@ HWY_SPEEDS = {
 'tertiary_link': 50,
 'unclassified': 30,
 'residential': 30,
+'cycleway': 15,
 'living_street': 5
 }
 
 def download_graph(
         city_names,
-        use_custom = True,
         useful_tags_way = USEFUL_TAGS_WAY,
-        custom_filter = CUSTOM_FILTER,
+        custom_filter = None,
     ):
 
     assert len(city_names) > 0, "At least one city should be specified."
@@ -79,7 +74,7 @@ def download_graph(
     for city_name in city_names:
         temp_graph = ox.graph_from_place(
             city_name,
-            custom_filter = custom_filter if use_custom else ALL_ROAD_TYPES,
+            custom_filter = custom_filter if custom_filter is not None else ALL_ROAD_TYPES,
             buffer_dist=2000,
             truncate_by_edge=True,
             simplify=False
@@ -122,8 +117,6 @@ def process_deadends(
 
     G = ox.simplify_graph(G, allow_lanes_diff=False)
 
-    #G = snx.process_turn_lanes(G, 3377240345) # TODO PROGRAM THIS.
-
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
     depot_nodes = gdf_nodes[gdf_nodes['highway'] == 'poi'].index.tolist()
 
@@ -147,7 +140,7 @@ def load_graph(name):
     ox_utils.log("Finished reading the graph.")
     return G
 
-def load_required_edges(G, required_cities, buffer_dist = 500):
+def load_required_edges(G, required_cities, required_highway_types ,buffer_dist = 500):
     nodes, edges = ox.utils_graph.graph_to_gdfs(G)
 
     def check_highway(value, highway_types):
@@ -182,7 +175,7 @@ def load_required_edges(G, required_cities, buffer_dist = 500):
         mask = edges['geometry'].apply(lambda x: x.within(union_polygon))
         edges = edges.loc[mask]
 
-        mask = edges.loc[mask, 'highway'].apply(check_highway, highway_types = ["unclassified"])
+        mask = edges.loc[mask, 'highway'].apply(check_highway, highway_types = required_highway_types)
         temp_required_edges_df = edges.loc[mask, ["lanes", "length", "lanes:forward", "lanes:backward", "turn:lanes", "speed_kph", "oneway", "geometry"]]
         required_edges_df = pd.concat([required_edges_df, temp_required_edges_df])
         required_edges_df = required_edges_df[~required_edges_df.index.duplicated(keep='first')]

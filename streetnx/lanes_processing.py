@@ -173,7 +173,7 @@ def map_reverses(edge_df, edge_lengths, depots):
                 length_reverse_index = edge_lengths[reverse_index]
 
                 # check if the length of the reverse edge is the same
-                if abs(length_index - length_reverse_index) < 0.0001:
+                if abs(length_index - length_reverse_index) < 0.1:
 
                     # set the reverse edge
                     reverse_map[index] = reverse_index

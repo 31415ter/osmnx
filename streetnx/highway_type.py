@@ -11,6 +11,7 @@ class HighwayType(Enum):
     RESIDENTIAL = 6
     SERVICE = 7
     PROJECTED_FOOTWAY = 7
+    CYCLEWAY = 7
 
     @classmethod
     def from_edge(cls, edge):

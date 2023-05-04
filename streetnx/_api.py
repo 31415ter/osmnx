@@ -14,7 +14,7 @@ from .penalties import add_penalties
 from .shortest_paths import get_all_shortest_paths
 
 from .plot import plot_route
-from .plot import ar3_route
+from .plot import save_ar3
 
 from .lanes_processing import save_lanes
 #from .lanes_processing import process_turn_lanes
