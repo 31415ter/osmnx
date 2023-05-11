@@ -114,7 +114,6 @@ def process_deadends(
     G.remove_edges_from(empty_lane_edges)
     ox_utils.log(f"Removed {len(empty_lane_edges)} lanes with empty lanes.")
     
-
     G = ox.simplify_graph(G, allow_lanes_diff=False)
 
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
