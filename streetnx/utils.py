@@ -3,6 +3,27 @@ import math
 
 from osmnx import utils as ox_utils
 
+
+def get_turn(edge):
+    reversed = edge['reversed']
+    turn_lanes = edge['turn:lanes']
+    turn_lanes_backward = edge['turn:lanes:backward'] if 'turn:lanes:backward' in edge else float('nan')
+    turn_lanes_forward = edge['turn:lanes:forward'] if 'turn:lanes:forward' in edge else float('nan')
+    
+    # x == x checks if a variable is 'nan', returns False if it is nan
+    # https://stackoverflow.com/questions/944700/how-can-i-check-for-nan-values
+    # Thus only execute this piece of code if one of the two variables is not nan
+    if isinstance(turn_lanes_backward, str) or isinstance(turn_lanes_forward, str):
+        if reversed and isinstance(turn_lanes_backward, str):
+            # edge is reversed and lanes backward is specified
+            turn_lanes = turn_lanes_backward
+        elif not reversed and isinstance(turn_lanes_forward, str):
+            # edge is not reversed and lanes forward is specified
+            turn_lanes = turn_lanes_forward
+
+    return turn_lanes
+
+
 # set lane count of the edge using the assumptions when lanes are not specified,
 # see https://wiki.openstreetmap.org/wiki/Key:lanes#Assumptions for more details
 # a roundabout is assumed to have 1 lane, if not specified otherwise

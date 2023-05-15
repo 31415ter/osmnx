@@ -42,10 +42,10 @@ if __name__ == '__main__':
     cities = ["Delft"]
     name = "_".join(cities)
 
-    # ### Downloading graph and processing deadends
+    ### Downloading graph and processing deadends
     # G = snx.load_graph(name)
-    # # G = snx.download_graph(cities, custom_filter=None)
-    # # G = snx.process_deadends(G, depots)
+    # G = snx.download_graph(cities, custom_filter=None)
+    # G = snx.process_deadends(G, depots)
     
     # def get_required_edges(cities, highway_types):
     #     required_edges_df = snx.load_required_edges(
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     # snx.save_graph(G, name)
 
     # TESTING do happen here!
-    G = snx.load_graph(name)
+    
 
     def string_2_bool(v:str) -> bool:
         return v.lower() in ("yes", "true", "t", "1")
@@ -147,7 +147,7 @@ if __name__ == '__main__':
         return parts
 
 
-    def split_edges(graph, parallel_lanes:int) -> None:        
+    def split_required_edges(graph, parallel_lanes:int) -> None:        
         highest_key = {}
         edges = graph.edges(keys=True)
         for edge in edges:
@@ -161,25 +161,73 @@ if __name__ == '__main__':
 
         for u, v, key, data in edges:
             required = string_2_bool(data.get('required'))
-            if not required: continue
-            turn_types = split_turn_types(data.get('turn:lanes'), parallel_lanes)
-            if len(turn_types) == 1: continue
+            if not required: 
+                continue
+
+            # Get the last turn:lanes that are available within an edge
+            a = data.get('turn:lanes')
+            if a == 'nan':
+                continue
+
+            c = ''
+            if isinstance(a, str):
+                b = a.replace('[', '').replace(']', '').replace(' ', '').replace('\'', '')
+                c = b.split(',')
+                if len(c) > 1:
+                    c = c[-1]
+            else:
+                c = a[-1]
+
+            turn_types = split_turn_types(c, parallel_lanes)
+            if len(turn_types) == 1:
+                new_data = dict(data) # copies the data dict
+                new_data['turn:lanes'] = turn_types[0]
+                new_data['lanes'] = str(len(turn_types[0].split('|')))
+                graph.edges[u, v, key].update(new_data)
+
+                continue # if only one turn, nothing to split
             added_edges += len(turn_types) - 1
             for i in range(len(turn_types)):
                 new_data = dict(data) # copies the data dict
                 new_data['turn:lanes'] = turn_types[i]
                 new_data['lanes'] = str(len(turn_types[i].split('|')))
-                if i == 0:                        
-                    data = new_data
+
+                if i == 0:
+                    graph.edges[u, v, key].update(new_data)
                 else:
                     in_matches = {(pair[0], (u, v, highest_key[(u, v)]+i)):G.turns[pair] for pair in G.turns.keys() if pair[1] == (u,v,key)}
                     out_matches = {((u, v, highest_key[(u, v)]+i), pair[1]):G.turns[pair] for pair in G.turns.keys() if pair[0] == (u,v,key)}
                     graph.add_edge(u, v, key=highest_key[(u, v)]+i, **new_data)
 
-                    G.turns.update(in_matches)
-                    G.turns.update(out_matches)
+                    graph.turns.update(in_matches)
+                    graph.turns.update(out_matches)
 
         ox_utils.log(f"Added {added_edges} copies of edges.")
+
+
+    def duplicate_edges(graph) -> None:
+        required_edges = [
+            (u,v,key,data) 
+            for (u,v,key,data)
+            in graph.edges(keys=True,data=True) 
+            if string_2_bool(data['required']) and data['lanes'] == '2' and data['turn:lanes'] != 'nan' and len(set(data['turn:lanes'].split("|"))) != 1
+        ]
+
+        # 1.
+        # iterate over each edge and create an duplicate edge for each possible direction
+        # COPY THE TURN PENALTIES INTO THE NEWLY CREATED EDGES
+        # THE OUTGOING TURN PENALTIES WILL BE UPDATED LATER..
+        # each edge should indicate on which lane is driven, such that paths to other edges can be routed correctly
+        
+        # 2.
+        # Save the duplicates into a map
+
+        # 3.
+        # For edges with lanes > 2, split these edges!
+        # set the correct lane that will be driven over (such that paths to other edges can be routed correctly)
+
+        # 4. 
+        # Set turn penalties between adjacent edges, based on lanes and/or turn penalties
 
 
     def set_split_edge_penalties(G) -> None:
@@ -189,13 +237,14 @@ if __name__ == '__main__':
             in_matches = {pair:G.turns[pair] for pair in G.turns.keys() if pair[1] == (u,v,key)}
             out_matches = {pair:G.turns[pair] for pair in G.turns.keys() if pair[0] == (u,v,key)}
 
+
+    G = snx.load_graph(name)
     snx.add_penalties(G)
-    split_edges(G, 3)
-    set_split_edge_penalties(G)
+    split_required_edges(G, 3)
+    duplicate_edges(G)
     
 
-
-    print("test")
+    # print("test")
 
     # ### Loading graph and saving distances
     # G = snx.load_graph(name + ("_Spaanse_Polder" if cf is None else "_custom_network"))

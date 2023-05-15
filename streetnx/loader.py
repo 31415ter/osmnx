@@ -110,6 +110,14 @@ def process_deadends(
     nx.set_edge_attributes(G, name="lanes", values=lane_counts)
     ox_utils.log("Set lane count of edges.")
 
+    turn_lanes = {
+        (from_node, to_node, key) : graph_utils.get_turn(data)
+        for (from_node, to_node, key, data)
+        in G.edges(keys=True, data=True)
+    }
+    nx.set_edge_attributes(G, name="turn:lanes", values=turn_lanes)
+    ox_utils.log("Set turn lanes.")
+
     empty_lane_edges = [edge for edge in G.edges(keys = True, data = True) if edge[3]['lanes'] <= 0]
     G.remove_edges_from(empty_lane_edges)
     ox_utils.log(f"Removed {len(empty_lane_edges)} lanes with empty lanes.")

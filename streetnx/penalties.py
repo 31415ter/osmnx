@@ -10,7 +10,7 @@ def add_penalties(G, turn_angle_threshold = 40):
     ox_utils.log("Start turn penalties assignment.")
 
     G.turns = {}
-    G.gamma = 3 #snx_utils.get_average_edge_duration(G)
+    G.gamma = snx_utils.get_average_edge_duration(G)
     ox_utils.log(f"Turn penalty gamma = {G.gamma}.")
 
     # iterate over each node (i.e. intersection) in the graph and
@@ -39,8 +39,6 @@ def add_penalties(G, turn_angle_threshold = 40):
                 turn = get_turn(G, in_edge=in_edge, out_edge=out_edge)
                 turns.append(turn)
 
-                straight
-
                 # A situation can occur where a node has multiple outgoing edges of various highway types.
                 # Then the outgoing edges which matches the type of the incoming edge the most is considered
                 # to be a potential better candidates for the straight road originating from the incoming edge
@@ -53,15 +51,13 @@ def add_penalties(G, turn_angle_threshold = 40):
                     turn_angle_threshold=turn_angle_threshold
                 )
 
-                straight
-
             # Add the straight edge to all outgoing_straights present at the node (intersection).
             # As multiple pairs of incoming and outgoing edges could have a straight to the same outgoing edge. 
             # However, only one outgoing edge should be used as a straight 
             # (otherwise two ingoing edges have a straight turn to the same outgoing edge, which is not possible)
             # TODO: documentation drawing why this is the case.
             if straight is not None:
-                if straight not in outgoing_straights:
+                if straight.out_edge not in outgoing_straights:
                     outgoing_straights[straight.out_edge] = []
                 outgoing_straights[straight.out_edge].append(straight)
 
