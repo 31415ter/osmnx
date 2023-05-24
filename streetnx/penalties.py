@@ -33,7 +33,7 @@ def add_penalties(G, turn_angle_threshold = 40):
                 # if the in and out edge visit the same nodes, but in opposing direction,
                 # and the edge lengths are equal, then the turn is a U-turn
                 if (in_edge[0] == out_edge[1]) and (in_edge_data['length'] == out_edge_data['length']):
-                    G.turns[(in_edge, out_edge)] = TurnType.UTURN
+                    G.turns[(in_edge, out_edge)] = TurnType.uturn
                     continue
 
                 turn = get_turn(G, in_edge=in_edge, out_edge=out_edge)
@@ -219,39 +219,39 @@ def assign_turn_types(G, straights, turns, turn_angle_threshold):
 
         # check if the outgoing edge is part of a roundabout
         if 'roundabout' in turn_out_edge_data['junction'] or 'circular' in turn_out_edge_data['junction']:
-            road_turn.set_type(TurnType.ROUNDABOUT)
+            road_turn.set_type(TurnType.roundabout)
 
         # check if the outgoing edge is part of a roundabout
         elif 'roundabout' in turn_in_edge_data['junction'] or 'circular' in turn_in_edge_data['junction']:
-            road_turn.set_type(TurnType.ROUNDABOUT)
+            road_turn.set_type(TurnType.roundabout)
 
         # Check if the turn is a u-turn, which is prohibited
         elif (road_turn.in_edge[0] == road_turn.out_edge[1]) and (turn_in_edge_data['length'] == turn_out_edge_data['length']):                
-            road_turn.set_type(TurnType.UTURN)
+            road_turn.set_type(TurnType.uturn)
 
         # Check if the turn angle is too tight.
         elif (abs(road_turn.angle) < turn_angle_threshold) or (abs(road_turn.angle) > 360 - turn_angle_threshold):                
-            road_turn.set_type(TurnType.INFEASIBLE)
+            road_turn.set_type(TurnType.infeasible)
 
         # Check if the turn resides in the straight list
         elif road_turn in straights:                
-            road_turn.set_type(TurnType.STRAIGHT)
+            road_turn.set_type(TurnType.through)
 
         # if a straight turn was previously identified for the incoming edge of the turn,
         # then the straight turn will be used to determine the right and left turns
         elif road_turn.in_edge in in_edge_straight_turns:                
             if road_turn.angle >= in_edge_straight_turns[road_turn.in_edge].angle:
-                road_turn.set_type(TurnType.RIGHT)
+                road_turn.set_type(TurnType.right)
             else:
-                road_turn.set_type(TurnType.LEFT)
+                road_turn.set_type(TurnType.left)
 
         # if no straight turn was identified using the in_edge of the turn on the node,
         # then simply use the turn's angle to determine right and left turns.
         else:
             if road_turn.angle > 180:
-                road_turn.set_type(TurnType.RIGHT)
+                road_turn.set_type(TurnType.right)
             else:
-                road_turn.set_type(TurnType.LEFT)
+                road_turn.set_type(TurnType.left)
 
         # add the turns to the graph by their key: (in_edge, out_edge).
         G.turns[(road_turn.in_edge, road_turn.out_edge)] = road_turn.turn_type

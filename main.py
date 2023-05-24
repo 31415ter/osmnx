@@ -3,12 +3,13 @@ import streetnx as snx
 import osmnx as ox
 import networkx as nx
 from streetnx import utils as nsx_utils
+from streetnx.turn import Turn, TurnType
 from osmnx import utils as ox_utils
 
 if __name__ == '__main__':
     ox.settings.log_file=True
     ox.settings.log_console=True
-    ox.settings.use_cache=True
+    ox.settings.use_cache=False
 
     # ### GLADHEIDBESTRIJDING
     # depots = {
@@ -18,28 +19,28 @@ if __name__ == '__main__':
     #     "amenity" : ["depot", "depot"]
     # }
 
-    # depots = {
-    #     "name" : ["Giesenweg"],
-    #      "lon" : [4.4279192], 
-    #      "lat" : [51.9263550], 
-    #     "amenity" : ["depot"]
-    # }
+    depots = {
+        "name" : ["Giesenweg"],
+         "lon" : [4.4279192], 
+         "lat" : [51.9263550], 
+        "amenity" : ["depot"]
+    }
 
 
     ### DELFT
-    depots = {
-        "name": ["Depot"],
-        "lon": [4.3575636],
-        "lat": [52.0197675],
-        "amenity": ["depot"]
-    }
+    # depots = {
+    #     "name": ["Depot"],
+    #     "lon": [4.3575636],
+    #     "lat": [52.0197675],
+    #     "amenity": ["depot"]
+    # }
 
     cf = (
         f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|cycleway"]'
         f'["access"!~"no|private"]'
     ) 
 
-    cities = ["Delft"]
+    cities = ["Rotterdam"]
     name = "_".join(cities)
 
     ### Downloading graph and processing deadends
@@ -63,7 +64,7 @@ if __name__ == '__main__':
     #     nx.set_edge_attributes(G, attr_required_bool, name='required')
     #     nx.set_edge_attributes(G, attr_avg_geometry, name='average_geometry')
     
-    # get_required_edges(cities = ["Delft"], highway_types = ["primary", "secondary", "tertiary"])
+    # get_required_edges(cities = ["Rotterdam"], highway_types = ["primary", "secondary", "tertiary"])
 
     # osmid_list = [
     # #     # 53224295, 171939038, 157251769, 7532700, [137559408, 53224296, 137559405], 137559407, [50369744, 137458531, 50369741, 609734558],
@@ -95,154 +96,19 @@ if __name__ == '__main__':
 
     # snx.save_graph(G, name)
 
-    # TESTING do happen here!
-    
 
-    def string_2_bool(v:str) -> bool:
-        return v.lower() in ("yes", "true", "t", "1")
-
-
-    def has_common_value(list1, list2):
-        set1 = set(list1)
-        for value in list2:
-            if value in set1:
-                return True
-        return False
-
-
-    def split_turn_types(turn_types: str, max_size: int):
-        if isinstance(turn_types, list):
-            turn_types = turn_types[-1] # select last turns
-        turn_types_list = [turn_type if turn_type != '' else 'misc' for turn_type in turn_types.split('|')]
-        num_turns = len(turn_types_list)
-        num_parts = math.ceil(num_turns / max_size)
-
-        parts = []
-        i = 0
-        for _ in range(num_parts):
-            part = []
-            while i < len(turn_types_list) and len(part) < max_size:
-                current_turn = turn_types_list[i]
-                previous_turn_not_same = part and not has_common_value(current_turn.split(';'), part[-1].split(';'))
-                next_turn_same = i + 1 < len(turn_types_list) and has_common_value(current_turn.split(';'), turn_types_list[i + 1].split(';'))
-                parts_left = math.ceil((len(turn_types_list)-i) / max_size)
-                balancing = (
-                    parts_left == 1 
-                    and num_turns - i == len(part) 
-                    and not next_turn_same 
-                    and previous_turn_not_same
-                    and i + 1 < len(turn_types_list)
-                )
-                if (
-                    previous_turn_not_same
-                    and next_turn_same 
-                    and parts_left != num_parts - len(parts) 
-                    or balancing
-                ):
-                    break
-                part.append(current_turn)
-                i += 1
-            parts.append('|'.join(part))
-
-        return parts
-
-
-    def split_required_edges(graph, parallel_lanes:int) -> None:        
-        highest_key = {}
-        edges = graph.edges(keys=True)
-        for edge in edges:
-            key = edge[2]
-            if (edge[0], edge[1]) not in highest_key or highest_key[(edge[0], edge[1])] < key:
-                highest_key[(edge[0], edge[1])] = key
-
-        edges = [(u,v,key,data) for (u,v,key,data) in graph.edges(keys=True,data=True)]
-
-        added_edges : int = 0
-
-        for u, v, key, data in edges:
-            required = string_2_bool(data.get('required'))
-            if not required: 
-                continue
-
-            # Get the last turn:lanes that are available within an edge
-            a = data.get('turn:lanes')
-            if a == 'nan':
-                continue
-
-            c = ''
-            if isinstance(a, str):
-                b = a.replace('[', '').replace(']', '').replace(' ', '').replace('\'', '')
-                c = b.split(',')
-                if len(c) > 1:
-                    c = c[-1]
-            else:
-                c = a[-1]
-
-            turn_types = split_turn_types(c, parallel_lanes)
-            if len(turn_types) == 1:
-                new_data = dict(data) # copies the data dict
-                new_data['turn:lanes'] = turn_types[0]
-                new_data['lanes'] = str(len(turn_types[0].split('|')))
-                graph.edges[u, v, key].update(new_data)
-
-                continue # if only one turn, nothing to split
-            added_edges += len(turn_types) - 1
-            for i in range(len(turn_types)):
-                new_data = dict(data) # copies the data dict
-                new_data['turn:lanes'] = turn_types[i]
-                new_data['lanes'] = str(len(turn_types[i].split('|')))
-
-                if i == 0:
-                    graph.edges[u, v, key].update(new_data)
-                else:
-                    in_matches = {(pair[0], (u, v, highest_key[(u, v)]+i)):G.turns[pair] for pair in G.turns.keys() if pair[1] == (u,v,key)}
-                    out_matches = {((u, v, highest_key[(u, v)]+i), pair[1]):G.turns[pair] for pair in G.turns.keys() if pair[0] == (u,v,key)}
-                    graph.add_edge(u, v, key=highest_key[(u, v)]+i, **new_data)
-
-                    graph.turns.update(in_matches)
-                    graph.turns.update(out_matches)
-
-        ox_utils.log(f"Added {added_edges} copies of edges.")
-
-
-    def duplicate_edges(graph) -> None:
-        required_edges = [
-            (u,v,key,data) 
-            for (u,v,key,data)
-            in graph.edges(keys=True,data=True) 
-            if string_2_bool(data['required']) and data['lanes'] == '2' and data['turn:lanes'] != 'nan' and len(set(data['turn:lanes'].split("|"))) != 1
-        ]
-
-        # 1.
-        # iterate over each edge and create an duplicate edge for each possible direction
-        # COPY THE TURN PENALTIES INTO THE NEWLY CREATED EDGES
-        # THE OUTGOING TURN PENALTIES WILL BE UPDATED LATER..
-        # each edge should indicate on which lane is driven, such that paths to other edges can be routed correctly
-        
-        # 2.
-        # Save the duplicates into a map
-
-        # 3.
-        # For edges with lanes > 2, split these edges!
-        # set the correct lane that will be driven over (such that paths to other edges can be routed correctly)
-
-        # 4. 
-        # Set turn penalties between adjacent edges, based on lanes and/or turn penalties
-
-
-    def set_split_edge_penalties(G) -> None:
-        required_edges = [(u,v,key,data) for (u,v,key,data) in G.edges(keys=True,data=True) if string_2_bool(data['required'])]
-
-        for u, v, key, data in required_edges:
-            in_matches = {pair:G.turns[pair] for pair in G.turns.keys() if pair[1] == (u,v,key)}
-            out_matches = {pair:G.turns[pair] for pair in G.turns.keys() if pair[0] == (u,v,key)}
-
-
+    # Load graph from memory (if cached) or from OSM server
     G = snx.load_graph(name)
+
+    # Add turn penalties to the graph
     snx.add_penalties(G)
-    split_required_edges(G, 3)
-    duplicate_edges(G)
-    
+
+    # Set turn:lanes on edges which are unspecified but are necesarry
+    process_turn_lanes(G)
+
+
+    #split_edges(G, 3)
+
 
     # print("test")
 

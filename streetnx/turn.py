@@ -1,12 +1,12 @@
 from enum import Enum
 
 class TurnType(Enum):
-    STRAIGHT = 1
-    ROUNDABOUT = 0
-    RIGHT = 3
-    LEFT = 5
-    UTURN = float('inf')
-    INFEASIBLE = float('inf')
+    through = 1
+    roundabout = 0
+    right = 3
+    left = 5
+    uturn = float('inf')
+    infeasible = float('inf')
 
 class Turn:
     def __init__(self, in_edge, out_edge, angle):

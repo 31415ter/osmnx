@@ -256,5 +256,5 @@ def load_depot_indices(G, required_edges):
 def get_average_edge_duration(G):
     total_duration = sum([get_edge_travel_time(G, edge, 100) for edge in G.edges(keys=True) if not is_nan(get_edge_travel_time(G, edge, 100))])
     num_streets = G.number_of_edges()
-    return total_duration / num_streets
+    return round(total_duration / num_streets)
 
