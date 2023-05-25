@@ -1,8 +1,9 @@
-
 import math
+
 from streetnx.turn import Turn, TurnType
 from osmnx import utils as ox_utils
-
+from streetnx.highway_type import HighwayType
+from streetnx import penalties
 
 # check if two lists have a value in common
 def _has_common_value(list1, list2):
@@ -102,7 +103,8 @@ def _edge_highest_key_map(graph):
 
     for edge in edges:
         # Destructure the edge tuple into its constituent parts
-        ((edge_pair), key) = edge
+        (u, v, key) = edge
+        edge_pair = (u, v)
         
         # Check if the edge pair is not in the highest_key map or if the current key is higher than the stored key
         if (edge_pair) not in highest_key or highest_key[edge_pair] < key:
@@ -115,14 +117,34 @@ def _edge_highest_key_map(graph):
 
 def _get_last_element_from_string_or_list(input_data):
     """
-    Takes a string or list and returns the last element.
+    This function takes an input that is either a string or a list.
+    If the input is a list, returns the last element. 
+    If the input is a string, it treats it as a comma-separated list enclosed by square brackets. 
+    If the input is neither a string nor a list, it returns an empty string.
+
+    Parameters:
+    input_data (str or list): The input data to process.
+
+    Returns:
+    str: The last element from the processed input.
     """
+    # Check if input is a string
     if isinstance(input_data, str):
+        # Remove square brackets, spaces, and quotes from the string
         cleaned_string = input_data.replace('[', '').replace(']', '').replace(' ', '').replace('\'', '')
+
+        # Split the cleaned string into elements using comma as a separator
         elements = cleaned_string.split(',')
+
+        # Return the last element if there are more than one element, otherwise return the cleaned string
         return elements[-1] if len(elements) > 1 else cleaned_string
+    
+    # Check if input is a list
     elif isinstance(input_data, list):
+        # Return the last element from the list
         return input_data[-1]
+    
+    # Return an empty string if input_data is neither a string nor a list
     return ''
 
 
@@ -170,10 +192,16 @@ def _get_turn_information(graph, edge, incoming=True):
     """
     (u,v,key) = edge
     out_matches = [
-        (graph.turns[pair].name, graph.edges[pair[incoming]]['lanes'], graph.edges[pair[incoming]]['turn:lanes'], pair[incoming])
+        (
+            graph.turns[pair].name,
+            graph.edges[pair[not incoming]]['lanes'],
+            graph.edges[pair[not incoming]]['highway'],
+            _get_last_element_from_string_or_list(graph.edges[pair[not incoming]]['turn:lanes']),
+            pair[not incoming]
+        )
         for pair 
         in graph.turns.keys() 
-        if pair[not incoming] == (u, v, key)
+        if pair[incoming] == (u, v, key)
     ]
     return out_matches
 
@@ -193,7 +221,7 @@ def get_outgoing_turns_information(graph, edge):
         - Turn lanes for the outgoing edge
         - The outgoing edge (u,v,key) 
     """
-    return _get_turns(graph, edge, incoming=False)
+    return _get_turn_information(graph, edge, incoming=False)
 
 
 def get_incoming_turns_information(graph, edge):
@@ -211,12 +239,28 @@ def get_incoming_turns_information(graph, edge):
         - Turn lanes for the incoming edge
         - The incoming edge (u,v,key) 
     """
-    return _get_turns(graph, edge, incoming=True)
+    return _get_turn_information(graph, edge, incoming=True)
 
 
 def filter_turns(filter_out_turns, turns_list):
+    """
+    This function filters out specific turns from a list of turns. The turns to be filtered out are provided as an input.
+    Each turn in the input list is a string that can contain multiple sub-turns separated by semicolons.
+    The function removes any sub-turns that match any turn in the filter_out_turns list.
+    If a turn becomes empty after filtering out sub-turns, it is not included in the result.
+
+    Parameters:
+    filter_out_turns (list): A list of turns to be filtered out from the turns_list.
+    turns_list (list): A list of turns, where each turn is a string that can contain multiple sub-turns separated by semicolons.
+
+    Returns:
+    list: A list of filtered turns. Each turn is a string with possibly multiple sub-turns (those that didn't match filter_out_turns) separated by semicolons.
+    """
     # Initialize the result list
     result = []
+
+    # Filter out lanes with 'none'
+    filter_out_turns.append('none')
 
     # Iterate over each item in the turns list
     for turn in turns_list:
@@ -246,9 +290,187 @@ def filter_turns(filter_out_turns, turns_list):
     # Return the filtered result
     return result
 
+def concatenate_turns(turns, highways, n_max):
+    """
+    This function receives two lists, 'turns' and 'highways', and a maximum number 'n_max'. It organizes the tuples (highway, turn) 
+    keeping track of the maximum category highway. It then organizes the turns that happened within the same highway category into a
+    single string separated by ';'.
+
+    Args:
+        turns (list): List of turns to be organized.
+        highways (list): List of highways corresponding to the turns.
+        n_max (int): Maximum number of tuples to keep track.
+
+    Returns:
+        list: List of turns for each category of highway, ordered by the category of the highway.
+    """
+
+    if len(turns) < n_max:
+        n_missing = n_max - len(turns)
+
+        if len(set(highways)) <= 1:  # check if all elements are the same
+            if 'through' in turns:
+                index = turns.index('through')
+            else:
+                index = highways.index(min(highways))
+        else:
+            index = highways.index(min(highways))
+                
+        turn = turns[index]
+        highway = highways[index]
+
+        new_turns = [turn] * n_missing
+        new_highways = [highway] * n_missing
+
+        turns[index:index] = new_turns
+        highways[index:index] = new_highways
+            
+
+    assert len(turns) >= n_max, "Number of turns must be greater or equal to n_max."
+    assert n_max > 1, "n_max must be greater than 1."
+
+    result = []
+
+    # Iterate over the turns list using index
+    for index in range(len(turns)):
+        current_highway = highways[index]
+        current_turn = turns[index]
+
+        if len(result) < n_max:
+            result.append((current_highway, current_turn))
+        else: # len(result) >= n_max
+            first_item = result[0]
+            last_category, last_turn = result[-1]
+
+            if first_item[0] < current_highway:
+                # Concatenate new turn_type with the last turn_type in the result
+                if current_turn == last_turn and last_turn != result[-2]:
+                    result[-2] = (result[-2][0], result[-2][1] + ";" + last_turn)
+
+                result[-1] = (last_category, (last_turn.split(';')[0] + ";" + current_turn) if last_turn.split(';')[0] != current_turn else current_turn)
+                continue
+
+            if (first_item[0] == current_highway 
+                and any(word in first_item[1] for word in ('through', 'roundabout')) 
+                and first_item[1] != current_turn
+            ):
+                result[-1] = (last_category, last_turn.split(';')[0] + ";" + current_turn)
+                continue
+
+            # Pop the first item in the result
+            popped = result.pop(0)
+            # Check if the next turn is different from the last turn of the popped item
+            if result[0][1] != popped[1].split(';')[-1]:
+                next_category, next_turn = result[0]
+                result[0] = (next_category, popped[1].split(';')[-1] + ";" + next_turn.split(';')[-1])
+
+            if popped[1] == result[0][1] and len(result) > 1 and popped[1] != result[1][1]:
+                result[1] = (result[1][0], popped[1] + ";" + result[1][1])
+
+            if len(result) == 1 and popped[1] == result[0][1] and popped[1] != current_turn:
+                current_turn = popped[1] + ";" + current_turn
+            # Append the current (highway, turn) pair to the result
+            result.append((current_highway, current_turn))
+    
+    organized_turns = [turn for highway, turn in result]
+    # assert(set(organized_turns) == set(turns))
+
+    return organized_turns
+
+
+def infer_lanes(u, v, key, data, incomming_edges, outgoing_edges):
+    """
+    Infers the lanes for a given edge based on the outgoing edges.
+
+    Args:
+        u (vertex): Starting vertex of the edge.
+        v (vertex): Ending vertex of the edge.
+        key: Key associated with the edge.
+        data (dict): Data associated with the edge.
+        incoming_edges (list): List of incoming edges to the vertex.
+        outgoing_edges (list): List of outgoing edges from the vertex.
+
+    Returns:
+        str: Concatenated string representation of inferred lanes.
+
+    Raises:
+        AssertionError: If the number of inferred lanes doesn't match the number of lanes on the edge.
+    """
+    
+    result = []
+
+    # Infer lanes based on the outgoing edges
+    for outgoing_edge in outgoing_edges:
+        if outgoing_edge[0] in ['uturn', 'infeasible']:
+            continue
+        pair = (outgoing_edge[0], outgoing_edge[2])
+        for _ in range(int(outgoing_edge[1])):
+            result.append(pair)
+
+    # Sort the inferred lanes in the order: 'left', 'through', 'right'
+    result.sort(key=lambda x: ('left', 'through', 'roundabout', 'right').index(x[0]))
+
+    turns = [turn for turn, highway in result]
+    highways = [HighwayType.from_data(highway).value for turn, highway in result]
+
+    if len(set(turns)) == 1:
+        turns = turns[:int(data['lanes'])]
+
+        if len(turns) != int(data['lanes']):
+            turns = turns * int(data['lanes'])
+
+    if len(turns) != int(data['lanes']):
+        turns = concatenate_turns(turns, highways, int(data['lanes']))
+
+    # Verify that the number of inferred lanes matches the number of lanes on the edge
+    assert len(turns) == int(data['lanes']), "Number of turn:lanes should equal the number of lanes on an edge"
+    
+    # Concatenate the inferred lanes into a string representation   
+    return "|".join(turns)
+
+
+def infer_roundabout(u, v, key, data, graph, outgoing_edges):
+    
+    out_angles = {}
+    closest_to_180 = None
+    min_diff = float('inf')
+
+    for outgoing_edge in outgoing_edges:
+        out_angles[outgoing_edge] = penalties.get_turn(graph, in_edge=(u,v,key), out_edge=outgoing_edge[-1]).angle
+        diff = abs(out_angles[outgoing_edge] - 180)
+
+        if diff < min_diff:
+            min_diff = diff
+            closest_to_180 = outgoing_edge
+
+    
+
+    results = []
+    results += list(zip(['through'] * int(closest_to_180[1]), [HighwayType.from_data(closest_to_180[2]).value] * int(closest_to_180[1])))
+
+    for edge in out_angles.keys():
+        if edge == closest_to_180: continue
+        angle = out_angles[edge]
+        turns = []
+        if angle < out_angles[closest_to_180]:
+            turns.extend(['left'] * int(edge[1]))
+        else:
+            turns.extend(['right'] * int(edge[1]))
+        
+        highways = []
+        highways.extend([HighwayType.from_data(edge[2]).value] * int(edge[1]))
+
+        results += list(zip(turns, highways))
+
+    results.sort(key=lambda x: ('left', 'through', 'roundabout', 'right').index(x[0]))
+    turns = [turn for turn, highway in results]
+    highways = [highway for turn, highway in results]
+
+    return concatenate_turns(turns, highways, int(data['lanes']))
+
 
 def process_turn_lanes(graph):
-    highest_keys = edge_highest_key_map(graph)
+    highest_keys = _edge_highest_key_map(graph)
 
     required_edges = [
         (u,v,key,data) 
@@ -256,36 +478,20 @@ def process_turn_lanes(graph):
         in graph.edges(keys=True,data=True) 
         if data['required'] == 'True' 
         and int(data['lanes']) > 1
-        and get_last_element_from_string_or_list(data['turn:lanes']) == 'nan'
+        and _get_last_element_from_string_or_list(data['turn:lanes']) == 'nan'
         and len(list(get_outgoing_turns_information(graph, (u, v, key)))) > 1
     ]
 
-    for u,v,key,data in required_edges:
-        lane_count = int(data['lanes'])
+    ii = 0
+    for u, v, key, data in required_edges:
+        ii+=1
+        print(ii)
         
         incomming_edges = get_incoming_turns_information(graph, (u,v,key))
         outgoing_edges = get_outgoing_turns_information(graph, (u,v,key))
 
-        # get the straight incoming edge, if it exists
-        for in_edge in incomming_edges:
-            if in_edge[0] != 'through':
-                continue
-            
-            # in_edge is straight
-            in_through_lanes = int(in_edge[1])
-            in_turn_types = in_edge[2].split("|")
-            in_through_edge = in_edge[3]
-
-            in_through_edge_outgoing_turns = [turn[0] for turn in get_outgoing_turns_information(graph, in_through_edge) if 'through' not in turn[0]]
-            
-            turn_types = filter_turns(in_through_edge_outgoing_turns, in_turn_types)
-
-            if len(turn_types) == lane_count:
-                print("DONE!")
-            else:
-                print("fuckk...")
-
-        # given the number of lanes, the types of outgoing turns, the number of lanes for these outgoing lanes
-        
-        print()
-
+        # Skipping weird junctions for now...
+        if data['junction'] == 'circular' or data['junction'] == 'roundabout':
+            data['turn:lanes'] = infer_roundabout(u, v, key, data, graph, outgoing_edges)
+        else:
+            data['turn:lanes'] = infer_lanes(u, v, key, data, incomming_edges, outgoing_edges)

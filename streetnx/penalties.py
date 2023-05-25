@@ -6,7 +6,9 @@ from streetnx.highway_type import HighwayType
 from streetnx.turn import Turn, TurnType
 
 def add_penalties(G, turn_angle_threshold = 40):
-
+    """
+    Concatenates elements in 'turns' list to meet 'max_lanes' requirement.
+    """
     ox_utils.log("Start turn penalties assignment.")
 
     G.turns = {}

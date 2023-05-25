@@ -20,3 +20,10 @@ class HighwayType(Enum):
             if name.lower() in string:
                 return member
         raise ValueError(f"Invalid highway type string: {string}")
+    
+    @classmethod
+    def from_data(cls, data):
+        for name, member in cls.__members__.items():
+            if name.lower() in data:
+                return member
+        raise ValueError(f"Invalid highway type string: {data}")

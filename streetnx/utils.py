@@ -37,22 +37,21 @@ def get_lane_count(edge):
         else:
             lane_count = 1
     # number of lanes are defined, infer the count
-    else:
-        if edge["lanes"] == edge["lanes"]:
-            # if edge is not oneway, lanes are divided equally between both directions
-            if edge["oneway"] not in {"yes", True, 1, "true", "1"}:
-                lane_count = math.ceil(int(edge["lanes"]) / 2)
-                if (
-                        (int(edge["lanes"]) != 1)
-                        and (int(edge["lanes"]) % 2 != 0) 
-                        and is_nan(edge['lanes:backward']) 
-                        and is_nan(edge['lanes:forward'])
-                    ):
-                    lane_count = math.floor(int(edge["lanes"]) / 2)
-            else:
-                lane_count = int(edge["lanes"])
+    elif edge["lanes"] == edge["lanes"]:
+        # if edge is not oneway, lanes are divided equally between both directions
+        if edge["oneway"] not in {"yes", True, 1, "true", "1"}:
+            lane_count = math.ceil(int(edge["lanes"]) / 2)
+            if (
+                    (int(edge["lanes"]) != 1)
+                    and (int(edge["lanes"]) % 2 != 0) 
+                    and is_nan(edge['lanes:backward']) 
+                    and is_nan(edge['lanes:forward'])
+                ):
+                lane_count = math.floor(int(edge["lanes"]) / 2)
         else:
-            lane_count = 1
+            lane_count = int(edge["lanes"])
+    else:
+        lane_count = 1
 
     reversed = edge['reversed']
     lanes_backward = edge['lanes:backward'] if 'lanes:backward' in edge else float('nan')

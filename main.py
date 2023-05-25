@@ -104,12 +104,10 @@ if __name__ == '__main__':
     snx.add_penalties(G)
 
     # Set turn:lanes on edges which are unspecified but are necesarry
-    process_turn_lanes(G)
-
+    snx.process_turn_lanes(G)
 
     #split_edges(G, 3)
-
-
+    
     # print("test")
 
     # ### Loading graph and saving distances
