@@ -139,6 +139,7 @@ def save_graph(G, name):
     ox_utils.log("Start saving the graph.")
     ox.save_graphml(G, filepath=FILE_PATH + name + ".graphml")
     ox.save_graph_geopackage(G, filepath=FILE_PATH + name + ".gpkg", directed = True)
+    # ox.save_graph_shapefile(G, filepath=FILE_PATH + name + ".shp", directed = True)
     ox_utils.log("Finished saving the graph.")
 
 def load_graph(name):

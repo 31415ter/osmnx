@@ -1,6 +1,4 @@
 import math
-
-from streetnx.turn import Turn, TurnType
 from osmnx import utils as ox_utils
 from streetnx.highway_type import HighwayType
 from streetnx import penalties
@@ -148,32 +146,6 @@ def _get_last_element_from_string_or_list(input_data):
     return ''
 
 
-def _partition_integer(n, max_partition_size):
-    """
-    Partitions the given integer into groups of at most 'max_partition_size',
-    trying to make the groups as evenly distributed as possible.
-
-    Parameters:
-    n (int): The integer to partition.
-    max_partition_size (int): The maximum size for a partition.
-
-    Returns:
-    list: A list of integers representing the partitions.
-    """
-    quotient, remainder = divmod(n, max_partition_size)
-    partitions = [max_partition_size] * quotient
-    if remainder:
-        partitions.append(remainder)
-
-    # Balance the partitions
-    for i in range(len(partitions) - 1, 0, -1):
-        while partitions[i] < partitions[i-1] - 1:
-            partitions[i] += 1
-            partitions[i-1] -= 1
-
-    return partitions
-
-
 def _get_turn_information(graph, edge, incoming=True):
     """
     Function to get outgoing turns in a given graph at a specified edge.
@@ -290,6 +262,7 @@ def filter_turns(filter_out_turns, turns_list):
     # Return the filtered result
     return result
 
+
 def concatenate_turns(turns, highways, n_max):
     """
     This function receives two lists, 'turns' and 'highways', and a maximum number 'n_max'. It organizes the tuples (highway, turn) 
@@ -372,13 +345,13 @@ def concatenate_turns(turns, highways, n_max):
             # Append the current (highway, turn) pair to the result
             result.append((current_highway, current_turn))
     
-    organized_turns = [turn for highway, turn in result]
+    highways, turns = map(list, zip(*result))
     # assert(set(organized_turns) == set(turns))
 
-    return organized_turns
+    return turns
 
 
-def infer_lanes(u, v, key, data, incomming_edges, outgoing_edges):
+def infer_lanes(data, outgoing_edges):
     """
     Infers the lanes for a given edge based on the outgoing edges.
 
@@ -410,8 +383,8 @@ def infer_lanes(u, v, key, data, incomming_edges, outgoing_edges):
     # Sort the inferred lanes in the order: 'left', 'through', 'right'
     result.sort(key=lambda x: ('left', 'through', 'roundabout', 'right').index(x[0]))
 
-    turns = [turn for turn, highway in result]
-    highways = [HighwayType.from_data(highway).value for turn, highway in result]
+    turns, highways = map(list, zip(*result))
+    highways = [HighwayType.from_data(highway).value for highway in highways]
 
     if len(set(turns)) == 1:
         turns = turns[:int(data['lanes'])]
@@ -430,7 +403,6 @@ def infer_lanes(u, v, key, data, incomming_edges, outgoing_edges):
 
 
 def infer_roundabout(u, v, key, data, graph, outgoing_edges):
-    
     out_angles = {}
     closest_to_180 = None
     min_diff = float('inf')
@@ -443,10 +415,8 @@ def infer_roundabout(u, v, key, data, graph, outgoing_edges):
             min_diff = diff
             closest_to_180 = outgoing_edge
 
-    
-
-    results = []
-    results += list(zip(['through'] * int(closest_to_180[1]), [HighwayType.from_data(closest_to_180[2]).value] * int(closest_to_180[1])))
+    result = []
+    result += list(zip(['through'] * int(closest_to_180[1]), [HighwayType.from_data(closest_to_180[2]).value] * int(closest_to_180[1])))
 
     for edge in out_angles.keys():
         if edge == closest_to_180: continue
@@ -460,18 +430,15 @@ def infer_roundabout(u, v, key, data, graph, outgoing_edges):
         highways = []
         highways.extend([HighwayType.from_data(edge[2]).value] * int(edge[1]))
 
-        results += list(zip(turns, highways))
+        result += list(zip(turns, highways))
 
-    results.sort(key=lambda x: ('left', 'through', 'roundabout', 'right').index(x[0]))
-    turns = [turn for turn, highway in results]
-    highways = [highway for turn, highway in results]
+    result.sort(key=lambda x: ('left', 'through', 'roundabout', 'right').index(x[0]))
+    turns, highways = map(list, zip(*result))
 
     return concatenate_turns(turns, highways, int(data['lanes']))
 
 
 def process_turn_lanes(graph):
-    highest_keys = _edge_highest_key_map(graph)
-
     required_edges = [
         (u,v,key,data) 
         for (u,v,key,data) 
@@ -482,16 +449,88 @@ def process_turn_lanes(graph):
         and len(list(get_outgoing_turns_information(graph, (u, v, key)))) > 1
     ]
 
-    ii = 0
-    for u, v, key, data in required_edges:
-        ii+=1
-        print(ii)
-        
-        incomming_edges = get_incoming_turns_information(graph, (u,v,key))
+    ox_utils.log(f'Start processing {len(required_edges)} required edges that are missing turn:lanes')
+
+    for u, v, key, data in required_edges:        
         outgoing_edges = get_outgoing_turns_information(graph, (u,v,key))
 
         # Skipping weird junctions for now...
         if data['junction'] == 'circular' or data['junction'] == 'roundabout':
             data['turn:lanes'] = infer_roundabout(u, v, key, data, graph, outgoing_edges)
+            graph.add_edge(u, v, key, **data)
         else:
-            data['turn:lanes'] = infer_lanes(u, v, key, data, incomming_edges, outgoing_edges)
+            data['turn:lanes'] = infer_lanes(data, outgoing_edges)
+            graph.add_edge(u, v, key, **data)
+
+    ox_utils.log(f'Finished processing the turn:lanes for the required edges')
+
+
+def split_edges(graph, parallel_edges:int):
+    highest_keys = _edge_highest_key_map(graph)
+
+    required_edges = [
+        (u,v,key,data) 
+        for (u,v,key,data) 
+        in graph.edges(keys=True,data=True) 
+        if data['required'] == 'True' and int(data['lanes']) > 1 # only edges with multiple lanes have multiple turn:lanes
+    ]
+
+    ox_utils.log(f'Splitting {len(required_edges)} edges with lanes > {parallel_edges} with their turn:lanes in consideration')
+
+    added_edges_count = 0
+    for u, v, key, data in required_edges:
+        turn_lane_str = _get_last_element_from_string_or_list(data['turn:lanes'])
+        
+        split_turn_lanes = _split_turn_types(turn_lane_str, parallel_edges)
+        added_edges_count += len(split_turn_lanes) - 1
+        # If no new split in the turn:lanes is identified, 
+        # then only update the turn penalties for the edge
+        
+        for index, turn_lanes in enumerate(split_turn_lanes):
+            # Deep copy the data dict of edge (u,v,key)
+            new_data = dict(data)
+            new_data['turn:lanes'] = turn_lanes
+            new_data['lanes'] = str(len(turn_lanes.split("|")))
+
+            update_or_create_edge(graph, index, (u, v, key, new_data), highest_keys)
+
+    ox_utils.log(f'Finished splitting the lanes into turn parts, created {added_edges_count} new edges')
+
+# update (if index == 0), or create a new edge for given edge
+def update_or_create_edge(
+        graph, 
+        index: int, 
+        edge: tuple, 
+        highest_keys: dict,
+    ) -> tuple:
+    (u, v, key, data) = edge
+    if index == 0:
+        graph.edges[u, v, key].update(data)
+        return edge
+    else:
+        new_key = highest_keys[(u, v)] + 1
+
+        # Get all ingoing and outgoing edge pairs for (u, v, new_key) and their turns
+        in_matches = get_turns(graph, (u, v, key), new_key, incoming=True)
+        out_matches = get_turns(graph, (u, v, key), new_key, incoming=False)
+
+        graph.add_edge(u, v, new_key, **data)
+
+        # Update highest key for (u,v)
+        highest_keys[(u, v)] = new_key
+
+        # Add all new edge pairs for (u, v, new_key) in the turn penalties dictonary of the graph
+        graph.turns.update(in_matches)
+        graph.turns.update(out_matches)
+
+        return (u, v, new_key, data)
+    
+def get_turns(graph, edge, new_key, incoming=True):
+    (u, v, key) = edge
+    matches = {
+        (pair[0], (u, v, new_key)) if incoming else ((u, v, new_key), pair[1]): graph.turns[pair]
+        for pair 
+        in graph.turns.keys() 
+        if pair[incoming] == (u, v, key)
+    }
+    return matches

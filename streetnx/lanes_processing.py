@@ -16,6 +16,17 @@ def save_lanes(name, required_edges_df, distances_df, depots_list):
     edge_lengths = snx_utils.get_edge_lengths(required_edges_df)
     edge_lanes = get_lanes(required_edges_df)
     reverse_edge_map = map_reverses(required_edges_df, edge_lengths, depots_list)
+
+    def non_invertible_pairs(map):
+        non_invertible = {}
+        for key, value in map.items():
+            if value not in map or map[value] != key:
+                non_invertible[key] = value
+        return non_invertible
+
+
+    print(non_invertible_pairs(reverse_edge_map))
+
     lanes = create_lanes(edge_lanes, edge_lengths, edge_travel_time, reverse_edge_map, required_edges_df["average_geometry"].values)
 
     to_remove = set()
@@ -44,7 +55,7 @@ def save_lanes(name, required_edges_df, distances_df, depots_list):
             depot_map[edge_index[1]]['incoming'] = i
 
     # write each row of distances to a txt file
-    with open('./data/' +  name + '_distances.txt', 'w') as f:
+    with open('./data/distances.txt', 'w') as f:
         f.write(str(len(distances)) + "\n")
         for row in distances:
             line = str(row)
@@ -54,7 +65,7 @@ def save_lanes(name, required_edges_df, distances_df, depots_list):
             f.write("\n")
 
         # encoded depots to json file
-    with open('./data/' +  name + '_depots.txt', 'w') as f:
+    with open('./data/depots.txt', 'w') as f:
         f.write(str(len(depot_map)) + "\n")
         for depot in depot_map:
             value = depot_map[depot]
@@ -66,7 +77,7 @@ def save_lanes(name, required_edges_df, distances_df, depots_list):
             )
                 
         # reverse edge map to json file
-    with open('./data/' +  name + '_lanes.txt', 'w') as f:
+    with open('./data/lanes.txt', 'w') as f:
         f.write(str(len(lanes)) + "\n")
         for value in lanes.values():
             f.write(
@@ -170,6 +181,8 @@ def map_reverses(edge_df, edge_lengths, depots):
         for i in range(0, max_key + 1):
             if (end, start, i) in index_map:
                 reverse_index = index_map[(end, start, i)]
+                if reverse_index == index:
+                    continue
                 length_reverse_index = edge_lengths[reverse_index]
 
                 # check if the length of the reverse edge is the same
@@ -222,8 +235,8 @@ def create_lanes(
                 "gritted_lanes": min(temp_lanes, parallel_lanes),
                 "length": edge_lengths[i],
                 "travel_time": edge_travel_time[i],
-                "x": float(re.findall(r'\d+\.\d+', edge_coords[i])[0]),
-                "y": float(re.findall(r'\d+\.\d+', edge_coords[i])[1]),
+                "x": 0,#float(re.findall(r'\d+\.\d+', edge_coords[i])[0]),
+                "y": 0,#float(re.findall(r'\d+\.\d+', edge_coords[i])[1]),
                 "reverse": None
             }
             temp_lanes -= parallel_lanes

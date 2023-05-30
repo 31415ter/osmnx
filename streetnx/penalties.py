@@ -12,7 +12,7 @@ def add_penalties(G, turn_angle_threshold = 40):
     ox_utils.log("Start turn penalties assignment.")
 
     G.turns = {}
-    G.gamma = snx_utils.get_average_edge_duration(G)
+    G.gamma = 3#snx_utils.get_average_edge_duration(G)
     ox_utils.log(f"Turn penalty gamma = {G.gamma}.")
 
     # iterate over each node (i.e. intersection) in the graph and
@@ -123,8 +123,8 @@ def get_straight_turn(G, straight, turn, in_edge_data, out_edge_data, turn_angle
 
     # Check if a difference larger than 1 in highway type exists 
     # between the current out edge of the straight and the incoming edge
-    if abs(HighwayType.from_edge(G.get_edge_data(*straight.out_edge)).value - in_type) > 1:
-        # if the difference in types between the outgoing en incoming edge is smaller or equal to 1,
+    if abs(HighwayType.from_edge(G.get_edge_data(*straight.out_edge)).value - in_type) > out_type - in_type:
+        # if the difference in types is larger than 1,
         # then these two edges better match their types and thus will be used as straight
         if abs(out_type - in_type) <= 1:                        
             return turn              
@@ -136,20 +136,20 @@ def get_straight_turn(G, straight, turn, in_edge_data, out_edge_data, turn_angle
         elif abs(180 - turn.angle) == abs(180 - straight.angle):
             raise ValueError(f"This should never happen.")
         else:
-            return turn
+            return straight
     # Else, the straight road is roughly the same type as the incoming road
-    else:       
-        # if the difference between road types is greater than 1, then this is not a potential straight road.
-        # As the selected outgoing straight edge and the incoming edge differ at most 1 in types.
-        if abs(out_type - in_type) > 1:                        
-            return straight
-        # if the angle between the two roads is less than the current straight road, then this is the new straight road
-        if abs(180 - turn.angle) < abs(180 - straight.angle):
-            return turn            
-        elif abs(180 - turn.angle) == abs(180 - straight.angle):
-            raise ValueError(f"This should never happen.")   
-        else:
-            return straight
+
+    # if the difference between road types is greater than 1, then this is not a potential straight road.
+    # As the selected outgoing straight edge and the incoming edge differ at most 1 in types.
+    if abs(HighwayType.from_edge(G.get_edge_data(*straight.out_edge)).value - in_type) > 1:                        
+        return straight
+    # if the angle between the two roads is less than the current straight road, then this is the new straight road
+    if abs(180 - turn.angle) < abs(180 - straight.angle):
+        return turn            
+    elif abs(180 - turn.angle) == abs(180 - straight.angle):
+        raise ValueError(f"This should never happen.")   
+    else:
+        return straight
         
 def best_fitting_straight(G, outgoing_edge, outgoing_straights):
     """
