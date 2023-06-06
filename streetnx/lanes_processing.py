@@ -20,22 +20,14 @@ def save_lanes(name, required_edges_df, distances_df, depots_list):
     def non_invertible_pairs(map):
         non_invertible = {}
         for key, value in map.items():
-            if value not in map or map[value] != key:
+            if value is not None and (value not in map or map[value] != key):
                 non_invertible[key] = value
         return non_invertible
 
-
-    print(non_invertible_pairs(reverse_edge_map))
-
     lanes = create_lanes(edge_lanes, edge_lengths, edge_travel_time, reverse_edge_map, required_edges_df["average_geometry"].values)
 
-    to_remove = set()
-
-    for i in range(len(lanes)):
-        lane = lanes[i]
-        if lane['reverse'] is not None:
-            if (lane['gritted_lanes'] == 1 and lanes[lane['reverse']]['gritted_lanes'] == 3):
-                to_remove.add(i)
+    _map = {lane['edge_ID']:lane['reverse'] for lane in lanes.values()}
+    print(non_invertible_pairs(_map))
 
     depot_map = {}
     for depot in depots_list:
@@ -214,7 +206,7 @@ def create_lanes(
         required_passes = math.ceil(lanes / parallel_lanes)
         edge_to_lane[i] = []
 
-        for j in range(required_passes):
+        for _ in range(required_passes):
             edge_to_lane[i].append(lane_ID)
 
             if i in reverse_map:
@@ -255,7 +247,8 @@ def create_lanes(
 
         if (edge_lanes[edge_u], edge_lanes[edge_v]) in {(1,1), (2,1), (1,2)}:
             lane_u_ID = edge_to_lane[edge_u][0]
-            lane_v_ID = edge_to_lane[edge_v][0]
+            lane_v_ID = lanes_map[edge_to_lane[edge_v][0]]['edge_ID']
+            # lane_v_ID = edge_to_lane[edge_v][0]
             lanes_map[lane_u_ID]["reverse"] = lane_v_ID
 
     return lanes_map

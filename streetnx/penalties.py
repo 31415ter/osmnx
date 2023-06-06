@@ -12,7 +12,7 @@ def add_penalties(G, turn_angle_threshold = 40):
     ox_utils.log("Start turn penalties assignment.")
 
     G.turns = {}
-    G.gamma = 3#snx_utils.get_average_edge_duration(G)
+    G.gamma = 3 #snx_utils.get_average_edge_duration(G)
     ox_utils.log(f"Turn penalty gamma = {G.gamma}.")
 
     # iterate over each node (i.e. intersection) in the graph and

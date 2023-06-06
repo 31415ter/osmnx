@@ -61,6 +61,7 @@ def plot_route_folium(
     tiles="cartodbpositron",
     zoom=1,
     fit_bounds=True,
+    required = False,
     **kwargs,
 ):
     """
@@ -92,7 +93,10 @@ def plot_route_folium(
     """
     # create gdf of the route edges in order
     node_pairs = zip(route[:-1], route[1:])
-    uvk = ((u, v, min(G[u][v].items(), key=lambda k: travel_time(k[1]))[0]) for u, v in node_pairs)
+    if required:
+        uvk = ((u, v, next(key for key, val in G[u][v].items() if val['required'] == 'True')) for u, v in node_pairs)
+    else:
+        uvk = ((u, v, min(G[u][v].items(), key=lambda k: travel_time(k[1]))[0]) for u, v in node_pairs)
     gdf_edges = utils_graph.graph_to_gdfs(G.subgraph(route), nodes=False).loc[uvk]
     return _plot_folium(gdf_edges, route_map, popup_attribute, tiles, zoom, fit_bounds, **kwargs)
 

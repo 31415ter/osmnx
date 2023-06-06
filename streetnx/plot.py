@@ -21,7 +21,7 @@ def plot_route(G, solution, depot_dict, paths, route_map=None):
     for i in range(0, len(solution)):
 
         service_arc = [edges_ids[solution[i]][0], edges_ids[solution[i]][1]]
-        route_map = ox.plot_route_folium(G, service_arc, color='#FF0000', opacity=1, route_map=route_map) # red
+        route_map = ox.plot_route_folium(G, service_arc, color='#FF0000', opacity=1, route_map=route_map, required=True) # red
 
         start = G.nodes[service_arc[0]]
         start_x, start_y = start['x'], start['y']
@@ -29,25 +29,25 @@ def plot_route(G, solution, depot_dict, paths, route_map=None):
         end = G.nodes[service_arc[1]]
         end_x, end_y = end['x'], end['y']
 
-        # folium.Marker(
-        #     location=[start_y, start_x], popup=None,
-        #     icon=plugins.BeautifyIcon(
-        #                      icon="arrow-down", icon_shape="marker",
-        #                      number=str(i) + "\'",
-        #                      border_color= "#757575",
-        #                      background_color="#FFFFFF"
-        #                  )
-        # ).add_to(route_map)
+        folium.Marker(
+            location=[start_y, start_x], popup=None,
+            icon=plugins.BeautifyIcon(
+                             icon="arrow-down", icon_shape="marker",
+                             number=str(i) + "\'",
+                             border_color= "#757575",
+                             background_color="#FFFFFF"
+                         )
+        ).add_to(route_map)
 
-        # folium.Marker(
-        #     location=[end_y, end_x], popup=None,
-        #     icon=plugins.BeautifyIcon(
-        #                      icon="arrow-down", icon_shape="marker",
-        #                      number=i,
-        #                      border_color= "#757575",
-        #                      background_color="#FFFFFF"
-        #                  )
-        # ).add_to(route_map)
+        folium.Marker(
+            location=[end_y, end_x], popup=None,
+            icon=plugins.BeautifyIcon(
+                             icon="arrow-down", icon_shape="marker",
+                             number=i,
+                             border_color= "#757575",
+                             background_color="#FFFFFF"
+                         )
+        ).add_to(route_map)
         
         if i+1 < len(solution):
             route_next_arc = paths[solution[i], solution[i+1]].tolist()

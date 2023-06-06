@@ -378,10 +378,10 @@ def simplify_graph(G, strict=True, remove_rings=True, allow_lanes_diff=True):
                 path_attributes[attr] = path_attributes[attr][0]
             else:
                 # otherwise, if there are multiple values, keep one of each in the order they are encountered
-                path_attributes[attr] = list(set(utils.flatten(path_attributes[attr])))
+                path_attributes[attr] = list(dict.fromkeys(utils.flatten(path_attributes[attr])))
 
         # construct the new consolidated edge's geometry for this path if none exists yet
-        if "geometry" not in path_attributes :
+        if "geometry" not in path_attributes:
             path_attributes["geometry"] = LineString(
                 [Point((G.nodes[node]["x"], G.nodes[node]["y"])) for node in path]
             )

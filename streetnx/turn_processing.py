@@ -1,7 +1,9 @@
+import copy
 import math
 from osmnx import utils as ox_utils
 from streetnx.highway_type import HighwayType
 from streetnx import penalties
+from streetnx.turn import Turn, TurnType
 
 # check if two lists have a value in common
 def _has_common_value(list1, list2):
@@ -390,7 +392,7 @@ def infer_lanes(data, outgoing_edges):
         turns = turns[:int(data['lanes'])]
 
         if len(turns) != int(data['lanes']):
-            turns = turns * int(data['lanes'])
+            turns = [turns[0]] * int(data['lanes'])
 
     if len(turns) != int(data['lanes']):
         turns = concatenate_turns(turns, highways, int(data['lanes']))
@@ -434,25 +436,42 @@ def infer_roundabout(u, v, key, data, graph, outgoing_edges):
 
     result.sort(key=lambda x: ('left', 'through', 'roundabout', 'right').index(x[0]))
     turns, highways = map(list, zip(*result))
+    turns = concatenate_turns(turns, highways, int(data['lanes']))
 
-    return concatenate_turns(turns, highways, int(data['lanes']))
+    return "|".join(turns)
 
 
-def process_turn_lanes(graph):
+def process_turn_lanes(graph, parallel_lanes):
+    
     required_edges = [
         (u,v,key,data) 
         for (u,v,key,data) 
         in graph.edges(keys=True,data=True) 
         if data['required'] == 'True' 
         and int(data['lanes']) > 1
-        and _get_last_element_from_string_or_list(data['turn:lanes']) == 'nan'
         and len(list(get_outgoing_turns_information(graph, (u, v, key)))) > 1
     ]
 
     ox_utils.log(f'Start processing {len(required_edges)} required edges that are missing turn:lanes')
 
-    for u, v, key, data in required_edges:        
+    for u, v, key, data in required_edges:
+
         outgoing_edges = get_outgoing_turns_information(graph, (u,v,key))
+
+        if _get_last_element_from_string_or_list(data['turn:lanes']) != 'nan':
+            # Skipping weird junctions for now...
+            if data['junction'] == 'circular' or data['junction'] == 'roundabout':
+                infered_lanes = infer_roundabout(u, v, key, data, graph, outgoing_edges)
+                if infered_lanes != data['turn:lanes']:
+                    print(infered_lanes, data['turn:lanes'], data['osmid'])
+            else:
+                infered_lanes = infer_lanes(data, outgoing_edges)
+                if infered_lanes != data['turn:lanes']:
+                    print(infered_lanes, data['turn:lanes'], data['osmid'])
+
+            continue
+
+        
 
         # Skipping weird junctions for now...
         if data['junction'] == 'circular' or data['junction'] == 'roundabout':
@@ -462,7 +481,16 @@ def process_turn_lanes(graph):
             data['turn:lanes'] = infer_lanes(data, outgoing_edges)
             graph.add_edge(u, v, key, **data)
 
-    ox_utils.log(f'Finished processing the turn:lanes for the required edges')
+    ox_utils.log(f'Start adressing turn:lanes of edges that do not correspond to the assigned turns')
+
+
+def partition_lane_count(lanes: int, max_count: int):
+    lane_list = [0] * math.ceil(lanes / max_count)
+
+    for lane in range(lanes):
+        lane_list[lane % len(lane_list)] += 1
+
+    return lane_list
 
 
 def split_edges(graph, parallel_edges:int):
@@ -472,29 +500,37 @@ def split_edges(graph, parallel_edges:int):
         (u,v,key,data) 
         for (u,v,key,data) 
         in graph.edges(keys=True,data=True) 
-        if data['required'] == 'True' and int(data['lanes']) > 1 # only edges with multiple lanes have multiple turn:lanes
+        if data['required'] == 'True' and int(data['lanes']) > parallel_edges # only edges with multiple lanes have multiple turn:lanes
     ]
 
     ox_utils.log(f'Splitting {len(required_edges)} edges with lanes > {parallel_edges} with their turn:lanes in consideration')
 
+    split_edges_list = list(required_edges)
+
     added_edges_count = 0
     for u, v, key, data in required_edges:
         turn_lane_str = _get_last_element_from_string_or_list(data['turn:lanes'])
-        
+
         split_turn_lanes = _split_turn_types(turn_lane_str, parallel_edges)
         added_edges_count += len(split_turn_lanes) - 1
-        # If no new split in the turn:lanes is identified, 
-        # then only update the turn penalties for the edge
-        
+
+        assert len(split_turn_lanes) > 1, "A split should only occur when multiple splits are found"
+       
         for index, turn_lanes in enumerate(split_turn_lanes):
             # Deep copy the data dict of edge (u,v,key)
-            new_data = dict(data)
+            new_data = copy.deepcopy(data)
             new_data['turn:lanes'] = turn_lanes
             new_data['lanes'] = str(len(turn_lanes.split("|")))
 
-            update_or_create_edge(graph, index, (u, v, key, new_data), highest_keys)
+            new_edge = update_or_create_edge(graph, index, (u, v, key, new_data), highest_keys)
+
+            if index > 0:
+                # do not add new edge if the edge was only updated.
+                split_edges_list.append(new_edge)
 
     ox_utils.log(f'Finished splitting the lanes into turn parts, created {added_edges_count} new edges')
+    return split_edges_list
+
 
 # update (if index == 0), or create a new edge for given edge
 def update_or_create_edge(
@@ -524,7 +560,8 @@ def update_or_create_edge(
         graph.turns.update(out_matches)
 
         return (u, v, new_key, data)
-    
+
+
 def get_turns(graph, edge, new_key, incoming=True):
     (u, v, key) = edge
     matches = {
@@ -534,3 +571,38 @@ def get_turns(graph, edge, new_key, incoming=True):
         if pair[incoming] == (u, v, key)
     }
     return matches
+
+
+def split_and_unique(s):
+    import re
+    
+    # Split by '|' and ';'
+    split_values = re.split('[|;]', s)
+
+    # Remove duplicates while maintaining order
+    unique_values = list(dict.fromkeys(split_values))
+
+    return unique_values
+
+
+def update_turn_penalties(graph, split_edges):
+
+    for edge in split_edges:
+        (u,v,k,data) = edge
+        turn_lanes = split_and_unique(data['turn:lanes'])
+
+        in_turns = get_incoming_turns_information(graph, (u,v,k))
+        out_turns = get_outgoing_turns_information(graph, (u,v,k))
+
+
+        infeasible_out = [turn[-1] for turn in out_turns if turn[0] not in turn_lanes]
+
+        for turn in infeasible_out:
+            graph.turns[(u,v,k), turn] = TurnType.infeasible
+
+    for edge in split_edges:
+        (u,v,k,data) = edge
+        in_turns = get_incoming_turns_information(graph, (u,v,k))
+
+        if len(in_turns) > 1:
+            print()

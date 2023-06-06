@@ -21,3 +21,4 @@ from .lanes_processing import save_lanes
 
 from .turn_processing import process_turn_lanes
 from .turn_processing import split_edges
+from .turn_processing import update_turn_penalties
