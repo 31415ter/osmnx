@@ -19,12 +19,12 @@ if __name__ == '__main__':
     #     "amenity" : ["depot", "depot"]
     # }
 
-    # depots = {
-    #     "name" : ["Giesenweg"],
-    #      "lon" : [4.4279192], 
-    #      "lat" : [51.9263550], 
-    #     "amenity" : ["depot"]
-    # }
+    depots = {
+        "name" : ["Giesenweg"],
+         "lon" : [4.4279192], 
+         "lat" : [51.9263550], 
+        "amenity" : ["depot"]
+    }
 
     # depots = {
     #     "name" : ["Laagjes"],
@@ -35,19 +35,19 @@ if __name__ == '__main__':
 
 
     ### DELFT
-    depots = {
-        "name": ["Depot"],
-        "lon": [4.3575636],
-        "lat": [52.0197675],
-        "amenity": ["depot"]
-    }
+    # depots = {
+    #     "name": ["Depot"],
+    #     "lon": [4.3575636],
+    #     "lat": [52.0197675],
+    #     "amenity": ["depot"]
+    # }
 
     cf = (
         f'["highway"]["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|cycleway"]'
         f'["access"!~"no|private"]'
     )
 
-    cities = ["Delft"]
+    cities = ["Rotterdam"]
     name = "_".join(cities)
 
     ### Downloading graph and processing deadends
@@ -74,7 +74,7 @@ if __name__ == '__main__':
     #     nx.set_edge_attributes(G, attr_required_bool, name='required')
     #     nx.set_edge_attributes(G, attr_avg_geometry, name='average_geometry')
     
-    # get_required_edges(cities = ["Delft"], highway_types = ["primary", "secondary", "tertiary"], buffer_dist = 0)
+    # get_required_edges(cities = ["Rotterdam"], highway_types = ["primary", "secondary"], buffer_dist = 0)
 
     # osmid_list = [
     #     [137881873, 137881875, 931175412], 27694746, 82834274, 7518889, [7518955, 7519004, 7518959], 7518931,
@@ -115,26 +115,24 @@ if __name__ == '__main__':
     # }
 
     # attr_required_bool.update(attr_not_required_bool)
-
     # nx.set_edge_attributes(G, attr_required_bool, name='required')
-
     # snx.save_graph(G, name + "_required")
 
+    # # # # # Load graph from memory (if cached) or from OSM server
+    # G = snx.load_graph(name + "_required")
+    # # Add turn penalties to the graph
+    # snx.add_penalties(G)
+    # # Set turn:lanes on edges which are unspecified but are necesarry
+    # snx.process_turn_lanes(G, 3)
+    # snx.save_graph(G, name + "_processed_1")
 
-    # # # # Load graph from memory (if cached) or from OSM server
-    G = snx.load_graph(name + "_required")    
-    # Add turn penalties to the graph
-    snx.add_penalties(G)
-    # Set turn:lanes on edges which are unspecified but are necesarry
-    snx.process_turn_lanes(G, 3)
-    # snx.save_graph(G, name + "_processed")
-
-    split_edges = snx.split_edges(G, 3)
-    snx.update_turn_penalties(G, split_edges)
+    # split_edges = snx.split_edges(G, 3)
+    # snx.update_turn_penalties(G, split_edges)
+    # snx.save_graph(G, name + "_processed_2")
     # print("test")
 
     ### Loading graph and saving distances
-    # G = snx.load_graph(name + "_required")
+    # G = snx.load_graph(name + "_processed_2")
     # snx.add_penalties(G)
     
     # def load_required_edges():
@@ -167,7 +165,7 @@ if __name__ == '__main__':
 
     # Visualizing a solution
     # G = snx.load_graph(name + "_required")
-    # distances, paths = snx.load_shortest_paths(name)
+    distances, paths = snx.load_shortest_paths(name)
 
     # nodes, edges = ox.utils_graph.graph_to_gdfs(G)
     # mask = (edges['required'] == 'True')

@@ -148,7 +148,7 @@ def _get_last_element_from_string_or_list(input_data):
     return ''
 
 
-def _get_turn_information(graph, edge, incoming=True):
+def _get_turn_information(graph, edge, incoming=True, required=False):
     """
     Function to get outgoing turns in a given graph at a specified edge.
     
@@ -167,20 +167,18 @@ def _get_turn_information(graph, edge, incoming=True):
     (u,v,key) = edge
     out_matches = [
         (
-            graph.turns[pair].name,
+            graph.turns[pair].name if not required else graph.required_turns[pair].name,
             graph.edges[pair[not incoming]]['lanes'],
             graph.edges[pair[not incoming]]['highway'],
             _get_last_element_from_string_or_list(graph.edges[pair[not incoming]]['turn:lanes']),
             pair[not incoming]
         )
-        for pair 
-        in graph.turns.keys() 
-        if pair[incoming] == (u, v, key)
+        for pair in (graph.turns.keys() if not required else graph.required_turns.keys()) if pair[incoming] == (u, v, key)
     ]
     return out_matches
 
 
-def get_outgoing_turns_information(graph, edge):
+def get_outgoing_turns_information(graph, edge, required=False):
     """
     Function to get outgoing turns in a given graph at a specified edge.
     
@@ -195,10 +193,10 @@ def get_outgoing_turns_information(graph, edge):
         - Turn lanes for the outgoing edge
         - The outgoing edge (u,v,key) 
     """
-    return _get_turn_information(graph, edge, incoming=False)
+    return _get_turn_information(graph, edge, incoming=False, required=required)
 
 
-def get_incoming_turns_information(graph, edge):
+def get_incoming_turns_information(graph, edge, required=False):
     """
     Function to get incoming turns in a given graph at a specified edge.
     
@@ -213,7 +211,7 @@ def get_incoming_turns_information(graph, edge):
         - Turn lanes for the incoming edge
         - The incoming edge (u,v,key) 
     """
-    return _get_turn_information(graph, edge, incoming=True)
+    return _get_turn_information(graph, edge, incoming=True, required=required)
 
 
 def filter_turns(filter_out_turns, turns_list):
@@ -443,43 +441,49 @@ def infer_roundabout(u, v, key, data, graph, outgoing_edges):
 
 def process_turn_lanes(graph, parallel_lanes):
     
+    def turn_types_on_lanes(graph, u, v, key, data):
+        turn_types = [turn[0] for turn in get_outgoing_turns_information(graph, (u,v,key))]
+
+        turn_lanes_str = _get_last_element_from_string_or_list(data['turn:lanes'])
+        turn_lanes = set(split_and_unique(turn_lanes_str))
+
+        if 'slight_right' in turn_lanes:
+            turn_lanes.remove('slight_right')
+            turn_lanes.add('right')
+
+        if 'slight_left' in turn_lanes:
+            turn_lanes.remove('slight_left')
+            turn_lanes.add('left')
+
+        return check_elements_in_set(turn_types, turn_lanes)
+    
+    def check_elements_in_set(my_list, my_set):
+        # Check if the input parameters are list
+        if not isinstance(my_list, list) or not isinstance(my_set, set):
+            raise ValueError("Both inputs should be lists")
+
+        # Check if each element in list1 is in list2
+        return all(elem in my_set for elem in my_list)
+
     required_edges = [
-        (u,v,key,data) 
-        for (u,v,key,data) 
-        in graph.edges(keys=True,data=True) 
-        if data['required'] == 'True' 
-        and int(data['lanes']) > 1
-        and len(list(get_outgoing_turns_information(graph, (u, v, key)))) > 1
+        (u,v,key,data)
+        for (u,v,key,data)
+        in graph.edges(keys=True,data=True)
+        if data['required'] == 'True'
+        and int(data['lanes']) >= parallel_lanes # only lanes that will be split need to be processed
+        and (len(list(get_outgoing_turns_information(graph, (u, v, key)))) > 1 or _get_last_element_from_string_or_list(data['turn:lanes']) == 'nan')
+        and not turn_types_on_lanes(graph, u, v, key, data) # only process edges where the out turns types of an edge reside on the lanes
     ]
 
     ox_utils.log(f'Start processing {len(required_edges)} required edges that are missing turn:lanes')
 
     for u, v, key, data in required_edges:
-
         outgoing_edges = get_outgoing_turns_information(graph, (u,v,key))
 
-        if _get_last_element_from_string_or_list(data['turn:lanes']) != 'nan':
-            # Skipping weird junctions for now...
-            if data['junction'] == 'circular' or data['junction'] == 'roundabout':
-                infered_lanes = infer_roundabout(u, v, key, data, graph, outgoing_edges)
-                if infered_lanes != data['turn:lanes']:
-                    print(infered_lanes, data['turn:lanes'], data['osmid'])
-            else:
-                infered_lanes = infer_lanes(data, outgoing_edges)
-                if infered_lanes != data['turn:lanes']:
-                    print(infered_lanes, data['turn:lanes'], data['osmid'])
-
-            continue
-
-        
-
-        # Skipping weird junctions for now...
         if data['junction'] == 'circular' or data['junction'] == 'roundabout':
-            data['turn:lanes'] = infer_roundabout(u, v, key, data, graph, outgoing_edges)
-            graph.add_edge(u, v, key, **data)
+            graph[u][v][key]['turn:lanes'] = infer_roundabout(u, v, key, data, graph, outgoing_edges)
         else:
-            data['turn:lanes'] = infer_lanes(data, outgoing_edges)
-            graph.add_edge(u, v, key, **data)
+            graph[u][v][key]['turn:lanes'] = infer_lanes(data, outgoing_edges)
 
     ox_utils.log(f'Start adressing turn:lanes of edges that do not correspond to the assigned turns')
 
@@ -586,23 +590,85 @@ def split_and_unique(s):
 
 
 def update_turn_penalties(graph, split_edges):
+    graph.required_turns = copy.deepcopy(graph.turns)
 
+    # outgoing turn edges
     for edge in split_edges:
         (u,v,k,data) = edge
-        turn_lanes = split_and_unique(data['turn:lanes'])
+        turn_lanes = set(split_and_unique(data['turn:lanes']))
 
-        in_turns = get_incoming_turns_information(graph, (u,v,k))
         out_turns = get_outgoing_turns_information(graph, (u,v,k))
 
+        # if only one outgoing turn, do not alter the penalties.
+        if len(out_turns) == 1:
+            continue
+
+        mapping = {'slight_right': 'right', 'slight_left': 'left'}
+
+        for old, new in mapping.items():
+            if old in turn_lanes:
+                turn_lanes.remove(old)
+                turn_lanes.add(new)
 
         infeasible_out = [turn[-1] for turn in out_turns if turn[0] not in turn_lanes]
 
+        # TODO PIETER's SHIT
+        turns_dict = dict()
+        for turn in out_turns:
+            if turn[0] not in turns_dict:
+                turns_dict[turn[0]] = []
+            turns_dict[turn[0]].append(turn)
+        result = [turns for turn, turns in turns_dict.items() if len(turns) >= 2]
+
+        if len(result) > 0:
+            keys = list(graph.get_edge_data(u, v).keys())
+
+            if len(result) > 1 or len(keys) > 2 or len(result[0]) > 2:
+                print("WHAT!")
+
+            if len(keys) != len(result[0]):
+                print("HUH??")
+
+            for key in [key for key in keys if key != k]:
+                infeasible_out.append(result[0][key][-1])
+
+
+        if len(infeasible_out) == len(out_turns):
+            # all turns are deemed to be infeasible, this is impossible!
+            for out_edge in infeasible_out:
+                out_turn_lanes = set(split_and_unique(graph.edges[(out_edge)]['turn:lanes']))
+
+                if 'slight_right' in out_turn_lanes:
+                    out_turn_lanes.remove('slight_right')
+                    turn_lanes.add('right')
+
+                if 'slight_left' in out_turn_lanes:
+                    out_turn_lanes.remove('slight_left')
+                    out_turn_lanes.add('left')
+
+                if any(lane in out_turn_lanes for lane in turn_lanes):
+                    infeasible_out.remove(out_edge)
+
+            if len(infeasible_out) == len(out_turns):
+                if 'left' in turn_lanes:
+                    infeasible_out.remove([turn for turn in out_turns if turn[0] == 'through'][0][-1])
+                elif 'right' in turn_lanes:
+                    infeasible_out.remove([turn for turn in out_turns if turn[0] == 'through'][-1][-1])
+
+        assert len(infeasible_out) != len(out_turns), "should not happen."
+
         for turn in infeasible_out:
-            graph.turns[(u,v,k), turn] = TurnType.infeasible
+            graph.required_turns[(u,v,k), turn] = TurnType.infeasible
 
-    for edge in split_edges:
+    # incoming turn edges
+    for edge in graph.edges(keys=True,data=True):
         (u,v,k,data) = edge
-        in_turns = get_incoming_turns_information(graph, (u,v,k))
+        if edge in split_edges or int(data['lanes']) != 3 or data['required'] == 'False':
+            continue
+        
+        turn_lane_set = set(_get_last_element_from_string_or_list(data['turn:lanes']).split("|")[1].split(";"))
+        out_turns = get_outgoing_turns_information(graph, (u,v,k), required=True)
 
-        if len(in_turns) > 1:
-            print()
+        for turn in out_turns:
+            if turn[0] not in turn_lane_set:
+                graph.required_turns[(u,v,k), turn[-1]] = TurnType.infeasible

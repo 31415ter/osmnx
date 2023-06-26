@@ -120,14 +120,18 @@ def get_straight_turn(G, straight, turn, in_edge_data, out_edge_data, turn_angle
     # set the straight to this turn
     if straight is None:
         return turn
+    
+    current_straight_type = HighwayType.from_edge(G.get_edge_data(*straight.out_edge)).value
+    straight_in_type_difference = abs(current_straight_type - in_type)
 
-    # Check if a difference larger than 1 in highway type exists 
-    # between the current out edge of the straight and the incoming edge
-    if abs(HighwayType.from_edge(G.get_edge_data(*straight.out_edge)).value - in_type) > out_type - in_type:
-        # if the difference in types is larger than 1,
-        # then these two edges better match their types and thus will be used as straight
-        if abs(out_type - in_type) <= 1:                        
-            return turn              
+    # Check if a large difference exists between the highway types of the current selected straight and the incoming edge
+    if straight_in_type_difference > 1:
+        # If the difference in highway types between the new considered out_edge and in_edge is smaller than the 
+        out_in_type_difference = abs(out_type - in_type)
+
+        if out_in_type_difference < straight_in_type_difference - 1:                        
+            return turn       
+
         # if the difference in types between the outgoing and incoming edge is larger than 1, 
         # just as the current selected outgoing straight edge, 
         # then check if the angle of the outgoing edge better matches the incoming edge
@@ -141,7 +145,7 @@ def get_straight_turn(G, straight, turn, in_edge_data, out_edge_data, turn_angle
 
     # if the difference between road types is greater than 1, then this is not a potential straight road.
     # As the selected outgoing straight edge and the incoming edge differ at most 1 in types.
-    if abs(HighwayType.from_edge(G.get_edge_data(*straight.out_edge)).value - in_type) > 1:                        
+    if abs(current_straight_type - in_type) > 1:                        
         return straight
     # if the angle between the two roads is less than the current straight road, then this is the new straight road
     if abs(180 - turn.angle) < abs(180 - straight.angle):
@@ -219,16 +223,16 @@ def assign_turn_types(G, straights, turns, turn_angle_threshold):
         turn_in_edge_data = G.get_edge_data(*road_turn.in_edge)
         turn_out_edge_data = G.get_edge_data(*road_turn.out_edge)
 
-        # check if the outgoing edge is part of a roundabout
-        if 'roundabout' in turn_out_edge_data['junction'] or 'circular' in turn_out_edge_data['junction']:
-            road_turn.set_type(TurnType.roundabout)
+        # # check if the outgoing edge is part of a roundabout
+        # if 'roundabout' in turn_out_edge_data['junction'] or 'circular' in turn_out_edge_data['junction']:
+        #     road_turn.set_type(TurnType.roundabout)
 
-        # check if the outgoing edge is part of a roundabout
-        elif 'roundabout' in turn_in_edge_data['junction'] or 'circular' in turn_in_edge_data['junction']:
-            road_turn.set_type(TurnType.roundabout)
+        # # check if the outgoing edge is part of a roundabout
+        # elif 'roundabout' in turn_in_edge_data['junction'] or 'circular' in turn_in_edge_data['junction']:
+        #     road_turn.set_type(TurnType.roundabout)
 
         # Check if the turn is a u-turn, which is prohibited
-        elif (road_turn.in_edge[0] == road_turn.out_edge[1]) and (turn_in_edge_data['length'] == turn_out_edge_data['length']):                
+        if (road_turn.in_edge[0] == road_turn.out_edge[1]) and (turn_in_edge_data['length'] == turn_out_edge_data['length']):                
             road_turn.set_type(TurnType.uturn)
 
         # Check if the turn angle is too tight.

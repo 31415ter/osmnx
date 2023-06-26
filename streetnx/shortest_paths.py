@@ -33,12 +33,14 @@ def all_paths_dijkstra(G, source_edge, required_edges, counter, start_time, max_
 
         for out_edge in G.out_edges(in_edge[1], keys = True):
             turn_type = G.turns[(in_edge, out_edge)]
+            if in_edge == source_edge and travel_time == 0:
+                turn_type = G.required_turns[(in_edge, out_edge)]
             turn_penalty = turn_type.value * G.gamma
 
             # Do not add a travel time if the in_edge is the source_edge
             # as we calculate the travel times between the endpoint of the source_edge to the endpoints of other edges
             # and thus if the in_edge is the source_edge, then no travel time is occured
-            duration = travel_time + turn_penalty + (snx_utils.get_edge_travel_time(G, in_edge, max_speed) if in_edge != source_edge else 0)
+            duration = travel_time + turn_penalty + (snx_utils.get_edge_travel_time(G, in_edge, max_speed) if in_edge == source_edge and travel_time != 0 else 0)
             if duration < dur[out_edge]:
                 dur[out_edge] = duration
                 prev[out_edge] = in_edge

@@ -4,9 +4,9 @@ class TurnType(Enum):
     through = 1
     roundabout = 0
     right = 3
-    left = 5
-    uturn = float('inf')
+    left = 5    
     infeasible = float('inf')
+    uturn = float('inf')
 
 class Turn:
     def __init__(self, in_edge, out_edge, angle):

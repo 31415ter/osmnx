@@ -42,20 +42,20 @@ ALL_ROAD_TYPES = (
 )
 
 HWY_SPEEDS = {  
-'motorway': 100,
-'motorway_link': 100,
-'trunk': 70,
-'trunk_link': 70,
-'primary': 50,
-'primary_link': 50,
-'secondary': 50,
-'secondary_link': 50,
-'tertiary': 50,
-'tertiary_link': 50,
-'unclassified': 30,
-'residential': 30,
-'cycleway': 15,
-'living_street': 5
+    'motorway': 100,
+    'motorway_link': 100,
+    'trunk': 70,
+    'trunk_link': 70,
+    'primary': 50,
+    'primary_link': 50,
+    'secondary': 50,
+    'secondary_link': 50,
+    'tertiary': 50,
+    'tertiary_link': 50,
+    'unclassified': 30,
+    'residential': 30,
+    'cycleway': 15,
+    'living_street': 5
 }
 
 def download_graph(
